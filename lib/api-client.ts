@@ -1,4 +1,4 @@
-import { CONFIGURATION_MESSAGES, validateRequest, type ConfigurationReason, type GenerationRequest } from "./contracts";
+import { validateRequest, type GenerationRequest } from "./contracts";
 import { isValidWav, joinWavSections } from "./audio";
 import { splitScript } from "./script";
 export type GenerationProgress = { completed: number; total: number };
@@ -38,14 +38,7 @@ async function requestSection(input: GenerationRequest, signal: AbortSignal): Pr
   });
   if (!response.ok) {
     let code: unknown;
-    let configurationReason: unknown;
-    try {
-      const error = (await response.json())?.error;
-      code = error?.code; configurationReason = error?.configurationReason;
-    } catch { /* Platform error: use safe fallback. */ }
-    if (code === "NOT_CONFIGURED" && typeof configurationReason === "string" && Object.hasOwn(CONFIGURATION_MESSAGES, configurationReason)) {
-      throw new Error(CONFIGURATION_MESSAGES[configurationReason as ConfigurationReason]);
-    }
+    try { code = (await response.json())?.error?.code; } catch { /* Platform error: use safe fallback. */ }
     const messages: Record<string, string> = {
       NOT_CONFIGURED: "Voice generation hasn’t been configured yet. Please contact the app owner.",
       RATE_LIMITED: "The voice service is busy. Wait a moment and try again.",

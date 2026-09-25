@@ -1,7 +1,6 @@
 import { AppError, type GenerationRequest } from "../contracts";
 import { buildEffectiveDirection, getVoiceVariant } from "../voice-profiles";
 import { MAX_PCM_BYTES, pcmToWav } from "../audio";
-import { requestGeminiWithFailover } from "./gemini-key-pool";
 
 export const TTS_TIMEOUT_MS = 90_000;
 const MAX_PROVIDER_BYTES = Math.ceil(MAX_PCM_BYTES * 4 / 3) + 100_000;
@@ -53,6 +52,11 @@ async function boundedJson(response: Response): Promise<unknown> {
 export async function generateSpeech(input: GenerationRequest, clientSignal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
   const variant = getVoiceVariant(input.variantId);
   if (!variant) throw new AppError("INVALID_VOICE", "Choose one of the available voice profiles.", 400);
+  const key = process.env.GEMINI_API_KEY;
+  if (!key?.trim()) {
+    console.error("voiceover.configuration_missing", { key: "GEMINI_API_KEY" });
+    throw new AppError("NOT_CONFIGURED", "Voice generation hasn’t been configured yet. Please contact the app owner.", 503);
+  }
   const controller = new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => { timedOut = true; controller.abort(); }, TTS_TIMEOUT_MS);
@@ -60,14 +64,25 @@ export async function generateSpeech(input: GenerationRequest, clientSignal?: Ab
   clientSignal?.addEventListener("abort", cancel, { once: true });
   if (clientSignal?.aborted) controller.abort();
   try {
-    const response = await requestGeminiWithFailover(JSON.stringify({
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+      method: "POST", signal: controller.signal, cache: "no-store",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
         model: "gemini-3.8-flash-tts", store: false,
         input: [{ type: "user_input", content: [{ type: "text", text: input.text,
           annotations: [{ type: "speech_metadata", style: buildEffectiveDirection(variant.profile, input.direction) }],
         }] }],
         response_format: { type: "audio", mime_type: "audio/l16", sample_rate: 24000 },
         generation_config: { speech_config: [{ voice: variant.voice }] },
-      }), controller.signal);
+      }),
+    });
+    if (!response.ok) {
+      console.error("voiceover.provider_failure", { status: response.status });
+      await response.body?.cancel();
+      if (response.status === 429) throw new AppError("RATE_LIMITED", "The voice service is busy. Wait a moment and try again.", 429);
+      if (response.status === 408 || response.status === 504) throw new AppError("TIMEOUT", "Voice generation took too long. Try again with a shorter script.", 504);
+      throw unavailable();
+    }
     return pcmToWav(readAudio(await boundedJson(response)));
   } catch (error) {
     if (timedOut) throw new AppError("TIMEOUT", "Voice generation took too long. Try again with a shorter script.", 504);

@@ -13,13 +13,7 @@ function providerResponse(data = pcm.toString("base64"), mime = "audio/l16") {
 function request(body: unknown = input, headers: Record<string, string> = {}) {
   return new Request("http://localhost/api/generate", { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
 }
-beforeEach(() => {
-  vi.stubEnv("GEMINI_API_KEY", "test-key-not-real");
-  vi.stubEnv("GEMINI_API_KEYS", "");
-  vi.stubEnv("GEMINI_API_KEYS_INDEPENDENT_PROJECTS", "false");
-  vi.stubEnv("GEMINI_API_FAILOVER_ON_TRANSIENT_ERRORS", "false");
-  vi.spyOn(console, "error").mockImplementation(() => {});
-});
+beforeEach(() => { vi.stubEnv("GEMINI_API_KEY", "test-key-not-real"); vi.spyOn(console, "error").mockImplementation(() => {}); });
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("request validation and endpoint", () => {

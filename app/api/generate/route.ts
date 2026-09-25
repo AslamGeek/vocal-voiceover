@@ -47,9 +47,8 @@ export async function POST(request: Request): Promise<Response> {
     } });
   } catch (error) {
     const safe = error instanceof AppError ? error : new AppError("INTERNAL_ERROR", "Voice generation is temporarily unavailable. Please try again.", 500);
-    const diagnostic = safe.configurationReason ? { configurationReason: safe.configurationReason } : {};
-    console.error("voiceover.request_failed", { code: safe.code, status: safe.status, ...diagnostic });
-    return Response.json({ error: { code: safe.code, message: safe.message, ...diagnostic } }, {
+    console.error("voiceover.request_failed", { code: safe.code, status: safe.status });
+    return Response.json({ error: { code: safe.code, message: safe.message } }, {
       status: safe.status, headers: { "Cache-Control": "no-store", ...(safe.status === 429 ? { "Retry-After": "30" } : {}) },
     });
   }

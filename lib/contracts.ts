@@ -3,17 +3,8 @@ export const MAX_SCRIPT_WORDS = 3000;
 export function countWords(text: string): number { return text.match(/\S+/gu)?.length ?? 0; }
 export const MAX_DIRECTION = 1000;
 export type GenerationRequest = { text: string; direction: string; variantId: VoiceVariantId };
-// Fixed messages only: never interpolate environment values or provider errors.
-export const CONFIGURATION_MESSAGES = {
-  MISSING_KEY: "No API key is available to this deployment. Check the Production environment variables and redeploy.",
-  INVALID_SINGLE_KEY: "The single API key has invalid formatting. Enter one key without quotes or a variable-name prefix.",
-  INVALID_KEY_LIST: "The API key list has invalid formatting. Use comma-separated keys without quotes or empty entries. The list takes priority over the single key.",
-  INVALID_QUOTA_SETTING: "The independent-projects setting must be true or false, or left unset.",
-  INVALID_TRANSIENT_SETTING: "The transient-failover setting must be true or false, or left unset.",
-} as const;
-export type ConfigurationReason = keyof typeof CONFIGURATION_MESSAGES;
 export class AppError extends Error {
-  constructor(public code: string, message: string, public status: number, public configurationReason?: ConfigurationReason) {
+  constructor(public code: string, message: string, public status: number) {
     super(message); this.name = "AppError";
   }
 }
