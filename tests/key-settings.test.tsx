@@ -16,14 +16,18 @@ beforeEach(() => {
 afterEach(cleanup);
 async function studio() {
   const view = render(<VoiceoverStudio />);
-  await waitFor(() => expect(screen.getByRole("button", { name: "Preview Warm & Inviting Female (Sulafat)" }).hasAttribute("disabled")).toBe(false));
+  await waitFor(() => expect(screen.queryByText("Add an API key in Settings to preview or generate voices.") || !screen.getByRole("button", { name: "Preview Warm & Inviting Female (Sulafat)" }).hasAttribute("disabled")).toBeTruthy());
   return view;
 }
 function openSettings() { fireEvent.click(screen.getByRole("button", { name: "Settings" })); }
 async function add(text: string) {
-  fireEvent.change(screen.getByLabelText("Add API keys"), { target: { value: text } });
-  fireEvent.click(screen.getByRole("button", { name: "Save keys" }));
-  await screen.findByText("Keys saved in this browser.");
+  for (const line of text.split("\n")) {
+    const [label, value] = line.split("|").map((part) => part.trim());
+    fireEvent.change(screen.getByLabelText(/New key label/), { target: { value: label } });
+    fireEvent.change(screen.getByLabelText("New API key"), { target: { value } });
+    fireEvent.click(screen.getByRole("button", { name: "Add key" }));
+    await screen.findByText("Key saved in this browser.");
+  }
 }
 it("stores many plain-text keys, deduplicates and migrates the old key without losing it", async () => {
   localStorage.setItem("vocal.gemini-api-key", "existing-key");
@@ -50,11 +54,13 @@ it("rejects corrupted storage instead of overwriting it, and accepts keys withou
   await expect(updateBrowserKeys(() => valid)).rejects.toThrow();
   expect(localStorage.getItem("vocal.api-keys")).toBe("not JSON");
 });
-it("adds, selects, remembers and deletes keys through Settings, then uses the server fallback", async () => {
+it("adds, selects, remembers and deletes keys through Settings, then selects the remaining browser key", { timeout: 15000 }, async () => {
   let view = await studio(); openSettings();
   await add("Project A | secret-a\nProject B | secret-b");
-  expect((screen.getByLabelText("Add API keys") as HTMLTextAreaElement).value).toBe("");
-  expect(screen.getByRole("dialog").textContent).not.toContain("secret-a");
+  expect((screen.getByLabelText("New API key") as HTMLInputElement).value).toBe("");
+  expect((screen.getByLabelText("API key for Project A") as HTMLInputElement).value).toBe("secret-a");
+  expect((screen.getByLabelText("API key for Project B") as HTMLInputElement).value).toBe("secret-b");
+  expect(screen.queryByText("Server key")).toBeNull();
   fireEvent.click(screen.getByRole("radio", { name: /Project B/ }));
   await screen.findByText("Using Project B.");
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
@@ -63,20 +69,26 @@ it("adds, selects, remembers and deletes keys through Settings, then uses the se
   view.unmount(); view = await studio(); openSettings();
   expect((screen.getByRole("radio", { name: /Project B/ }) as HTMLInputElement).checked).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Delete Project B" }));
-  await screen.findByText("Key deleted. Using the server key.");
+  await screen.findByText("Key deleted.");
   expect((await loadBrowserKeys()).keys.map((key) => key.value)).toEqual(["secret-a"]);
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
   fireEvent.change(screen.getByLabelText(/01 Transcript/), { target: { value: "Hello there." } });
   fireEvent.click(screen.getByRole("button", { name: "Generate" }));
   await screen.findByText("1 of 1 auditions ready");
-  expect(requestMock.mock.calls.at(-1)?.[3]).toBe("");
+  expect(requestMock.mock.calls.at(-1)?.[3]).toBe("secret-a");
+  openSettings(); fireEvent.click(screen.getByRole("button", { name: "Delete Project A" }));
+  await screen.findByText("Key deleted.");
+  expect((await loadBrowserKeys()).activeId).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  expect(screen.getByRole("button", { name: "Generate" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByRole("button", { name: "Preview Warm & Inviting Female (Sulafat)" }).hasAttribute("disabled")).toBe(true);
 });
 it("clears preview cache on a key switch and locks Settings throughout a generation", async () => {
   await updateBrowserKeys((current) => addKeyLines(current, "A | key-a\nB | key-b"));
   await studio();
   fireEvent.click(screen.getByRole("button", { name: "Preview Warm & Inviting Female (Sulafat)" }));
   await screen.findByLabelText("Warm & Inviting Female (Sulafat) preview");
-  openSettings(); fireEvent.click(screen.getByRole("radio", { name: "B" }));
+  openSettings(); fireEvent.click(screen.getByRole("radio", { name: "Use B" }));
   await screen.findByText("Using B.");
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
@@ -93,11 +105,11 @@ it("clears preview cache on a key switch and locks Settings throughout a generat
 it("reports failed saves while keeping the input and previous active key", async () => {
   await studio(); openSettings();
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("Storage full", "QuotaExceededError"); });
-  fireEvent.change(screen.getByLabelText("Add API keys"), { target: { value: "new-secret" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save keys" }));
+  fireEvent.change(screen.getByLabelText("New API key"), { target: { value: "new-secret" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add key" }));
   await screen.findByRole("alert");
-  expect(screen.queryByText("Keys saved in this browser.")).toBeNull();
-  expect((screen.getByLabelText("Add API keys") as HTMLTextAreaElement).value).toBe("new-secret");
+  expect(screen.queryByText("Key saved in this browser.")).toBeNull();
+  expect((screen.getByLabelText("New API key") as HTMLInputElement).value).toBe("new-secret");
   expect(localStorage.getItem("vocal.api-keys")).toBeNull();
 });
 it("copies the full key and saves edits to the label and active value across reloads", async () => {
@@ -110,12 +122,12 @@ it("copies the full key and saves edits to the label and active value across rel
   expect(writeText).toHaveBeenCalledWith("initial-secret");
   fireEvent.click(screen.getByRole("button", { name: "Edit Project" }));
   fireEvent.change(screen.getByLabelText("Key label"), { target: { value: "Renamed" } });
-  fireEvent.change(screen.getByLabelText("API key value"), { target: { value: "updated-secret" } });
+  fireEvent.change(screen.getByLabelText("API key for Project"), { target: { value: "updated-secret" } });
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await screen.findByText("Key updated.");
   const saved = await loadBrowserKeys();
   expect(saved.keys[0]).toMatchObject({ label: "Renamed", value: "updated-secret", id: saved.activeId });
-  expect(screen.queryByLabelText("API key value")).toBeNull();
+  expect((screen.getByLabelText("API key for Renamed") as HTMLInputElement).readOnly).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Copy Renamed" }));
   await screen.findByText("Renamed copied.");
   expect(writeText).toHaveBeenLastCalledWith("updated-secret");

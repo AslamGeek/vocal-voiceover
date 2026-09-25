@@ -28,11 +28,11 @@ One unified queue generates up to two voices concurrently, with sequential secti
 
 ## API keys in Settings
 
-Open **Settings** in the studio header. Paste keys one per line, optionally using `Project name | API key`, then Save keys. The first saved key becomes active; select another saved key or **Server key** whenever needed. Each saved key has Copy, Edit, and Delete buttons. Copy puts the full key on the clipboard; Edit updates its label and value. Delete removes a saved key; deleting the active key switches to Server key. Duplicate keys are ignored. There is no app-imposed key-count limit (browser storage capacity still applies).
+Open **Settings** in the studio header. Each saved API key has its own visible text field. Add a key using the separate label (optional) and API key fields, then **Add key**. The first saved key becomes active; select any saved key whenever needed. Each saved key has Copy, Edit, and Delete buttons. Copy puts the full key on the clipboard; Edit updates its label and value. Delete removes a saved key; deleting the active key selects the first remaining key. With no keys saved, Preview and Generate are disabled until a key is added. Duplicate keys are rejected. There is no app-imposed key-count limit (browser storage capacity still applies).
 
-Keys and the selection persist in this browser’s localStorage under `vocal.api-keys`, as **plain text**, as requested. They survive refreshes and reopening the app at the same origin. They do not synchronize across devices, browser profiles, or different URLs. Clearing site data removes them. Saved values are hidden in the list but not encrypted; JavaScript on this origin can read them. The previous single saved key is imported automatically, and its old storage entry is removed only after saving the new list succeeds. Storage errors are shown; the UI does not claim a failed save succeeded.
+Keys and the selection persist in this browser’s localStorage under `vocal.api-keys`, as **plain text**, as requested. They survive refreshes and reopening the app at the same origin. They do not synchronize across devices, browser profiles, or different URLs. Clearing site data removes them. Saved values are visible in their own fields and are not encrypted; JavaScript on this origin can read them. The previous single saved key is imported automatically, and its old storage entry is removed only after saving the new list succeeds. Storage errors are shown; the UI does not claim a failed save succeeded.
 
-The selected key is sent to the app’s same-origin API in an Authorization header, and used only for that request. The server forwards it to the fixed Gemini endpoint without following redirects. Use HTTPS in production. Keys are never placed in URLs, transcript JSON, downloads or app logs. No database, extra Vercel settings, or owner account is needed. The Vercel `GEMINI_API_KEY` remains the fallback when Server key is selected, and is never returned to the browser.
+The selected key is sent to the app’s same-origin API in an Authorization header, and used only for that request. The server forwards it to the fixed Gemini endpoint without following redirects. Use HTTPS in production. Keys are never placed in URLs, transcript JSON, downloads or app logs. No database, extra Vercel settings, or owner account is needed. Only the API key selected in the browser UI is used. The server does not read or fall back to `GEMINI_API_KEY`.
 
 Each generation batch captures the selected key for all voices and script sections. Settings is disabled while generating; cancel before switching. Opening Settings cancels a pending preview, and switching keys clears the preview cache. Completed voiceovers remain available. Other open tabs pick up saved changes when Settings is reopened or the page refreshed. A rejected or exhausted key never automatically rotates or silently falls back. Keys from the same Google project share quota.
 
@@ -47,7 +47,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-On PowerShell, use `Copy-Item .env.example .env.local`. Open the URL printed by Next.js. Never add a NEXT_PUBLIC_ prefix to the key. No provider SDK, database, global state library, or application account system is required.
+Open the URL printed by Next.js and add an API key in Settings. No environment variable is required. No provider SDK, database, global state library, or application account system is required.
 
 ## Checks and production
 
@@ -58,17 +58,17 @@ npm run build
 npm start
 ```
 
-Tests mock Gemini: they do not use a real key or incur provider charges. Building does not require a key; generation needs either an entered key or the server’s GEMINI_API_KEY.
+Tests mock Gemini: they do not use a real key or incur provider charges. Building does not require a key; generation needs a key selected in Settings.
 
 ## Deploy to Vercel
 
 1. Import this folder as a Next.js project using your preferred Vercel workflow. If using a repository, set the Root Directory to the folder containing this package.json.
-2. Add `GEMINI_API_KEY` as a sensitive server environment variable for the deployment environments you use.
+2. No Gemini environment variable is needed. Add API keys in the app’s Settings after deployment.
 3. Use Node.js 24, the Next.js preset, install command `npm ci`, and build command `npm run build`. Leave the output directory at the framework default.
-4. Deploy (or redeploy after adding/changing the key). The route requests a 120-second function duration; use a Vercel runtime/plan supporting this duration.
+4. Deploy. The route requests a 120-second function duration; use a Vercel runtime/plan supporting this duration.
 5. Generate a short script, listen for text fidelity and pronunciation, and download/open the WAV. Repeat with your target language and direction.
 
-Alternatively, from this folder, run `npx vercel`, configure the environment variable in Vercel, and run `npx vercel --prod`.
+Alternatively, from this folder, run `npx vercel` and then `npx vercel --prod`.
 
 ## Push future changes on Windows
 

@@ -11,7 +11,7 @@ function providerResponse(data = pcm.toString("base64"), mime = "audio/l16") {
   return Response.json({ steps: [{ type: "model_output", content: [{ type: "audio", data, mime_type: mime }] }] });
 }
 function request(body: unknown = input, headers: Record<string, string> = {}) {
-  return new Request("http://localhost/api/generate", { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+  return new Request("http://localhost/api/generate", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer test-key-not-real", ...headers }, body: JSON.stringify(body) });
 }
 beforeEach(() => { vi.stubEnv("GEMINI_API_KEY", "test-key-not-real"); vi.spyOn(console, "error").mockImplementation(() => {}); });
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.useRealTimers(); });
@@ -28,7 +28,7 @@ describe("request validation and endpoint", () => {
     expect(process.env.GEMINI_API_KEY).toBe(serverKey);
     expect(JSON.stringify([...response.headers])).not.toContain(personalKey);
   });
-  it("isolates simultaneous callers' keys and retains the server fallback", async () => {
+  it("isolates simultaneous callers' browser keys", async () => {
     const keys: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (_url, init) => { keys.push(init.headers["x-goog-api-key"]); return providerResponse(); }));
     const responses = await Promise.all([
@@ -115,17 +115,18 @@ describe("request validation and endpoint", () => {
     expect(response.status).toBe(200);
     expect((await POST(request(input, { Host: "127.0.0.1:3000", Origin: "null" }))).status).toBe(403);
   });
-  it.each([[429, 429, "RATE_LIMITED"], [500, 503, "PROVIDER_UNAVAILABLE"], [403, 503, "PROVIDER_UNAVAILABLE"], [504, 504, "TIMEOUT"]])("maps provider %s to safe errors", async (upstream, status, code) => {
+  it.each([[429, 429, "RATE_LIMITED"], [500, 503, "PROVIDER_UNAVAILABLE"], [403, 401, "INVALID_API_KEY"], [504, 504, "TIMEOUT"]])("maps provider %s to safe errors", async (upstream, status, code) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("secret provider internals", { status: upstream })));
     const response = await POST(request());
     expect(response.status).toBe(status);
     const body = await response.text(); expect(body).toContain(code);
     expect(body).not.toContain("secret"); expect(body).not.toContain("test-key");
   });
-  it("reports missing configuration without returning environment details", async () => {
-    vi.stubEnv("GEMINI_API_KEY", "");
-    const response = await POST(request());
-    expect(response.status).toBe(503);
+  it("rejects a missing browser key even when a server environment key exists", async () => {
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    const noKey = request(); noKey.headers.delete("Authorization");
+    const response = await POST(noKey);
+    expect(fetchMock).not.toHaveBeenCalled(); expect(response.status).toBe(400);
     const body = await response.text();
     expect(body).toContain("NOT_CONFIGURED"); expect(body).not.toContain("GEMINI_API_KEY");
   });
@@ -145,7 +146,7 @@ describe("provider reliability", () => {
   it("uses the selected profile baseline for blank direction without changing the spoken text", async () => {
     const fetchMock = vi.fn().mockResolvedValue(providerResponse());
     vi.stubGlobal("fetch", fetchMock);
-    await generateSpeech({ ...input, direction: "  " });
+    await generateSpeech({ ...input, direction: "  " }, undefined, "test-key-not-real");
     const content = JSON.parse(fetchMock.mock.calls[0][1].body).input[0].content[0];
     expect(content.text).toBe(input.text);
     expect(content.annotations[0].style).toBe(`${getVoiceVariant(input.variantId)!.profile.baseDirection}\n\n${TRANSCRIPT_FIDELITY_INSTRUCTION}`);
@@ -157,7 +158,7 @@ describe("provider reliability", () => {
       providerSignal = init.signal;
       init.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
     })));
-    const generation = generateSpeech(input);
+    const generation = generateSpeech(input, undefined, "test-key-not-real");
     const assertion = expect(generation).rejects.toMatchObject({ code: "TIMEOUT", status: 504 });
     await vi.advanceTimersByTimeAsync(TTS_TIMEOUT_MS);
     await assertion; expect(providerSignal?.aborted).toBe(true);
@@ -167,13 +168,13 @@ describe("provider reliability", () => {
     vi.stubGlobal("fetch", vi.fn((_url, init) => new Promise((_resolve, reject) => {
       init.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
     })));
-    const generation = generateSpeech(input, client.signal);
+    const generation = generateSpeech(input, client.signal, "test-key-not-real");
     const assertion = expect(generation).rejects.toMatchObject({ code: "CANCELLED" });
     client.abort(); await assertion;
   });
   it("maps network failures safely", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("sensitive-url")));
-    await expect(generateSpeech(input)).rejects.toMatchObject({ code: "PROVIDER_UNAVAILABLE", status: 503 });
+    await expect(generateSpeech(input, undefined, "test-key-not-real")).rejects.toMatchObject({ code: "PROVIDER_UNAVAILABLE", status: 503 });
   });
   it.each([
     ["missing audio", () => Response.json({ steps: [] })],
@@ -185,11 +186,11 @@ describe("provider reliability", () => {
     ["wrong sample rate", () => providerResponse(undefined, "audio/l16;rate=16000")],
   ])("rejects %s", async (_label, response) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response()));
-    await expect(generateSpeech(input)).rejects.toMatchObject({ code: "INVALID_AUDIO", status: 502 });
+    await expect(generateSpeech(input, undefined, "test-key-not-real")).rejects.toMatchObject({ code: "INVALID_AUDIO", status: 502 });
   });
   it("rejects audio exceeding the deployment response limit", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(providerResponse(Buffer.alloc(MAX_PCM_BYTES + 2).toString("base64"))));
-    await expect(generateSpeech(input)).rejects.toMatchObject({ code: "AUDIO_TOO_LONG" });
+    await expect(generateSpeech(input, undefined, "test-key-not-real")).rejects.toMatchObject({ code: "AUDIO_TOO_LONG" });
   });
 });
 

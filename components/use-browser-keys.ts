@@ -20,6 +20,5 @@ export function useBrowserKeys() {
     const value = await updateBrowserKeys(update);
     setSaved(value); setReady(true); setError("");
   }
-  function useServer() { setSaved(emptyKeys()); setReady(true); setError(""); }
-  return { saved, ready, error, reload, change, useServer, apiKey: saved.keys.find((key) => key.id === saved.activeId)?.value ?? "" };
+  return { saved, ready, error, reload, change, apiKey: saved.keys.find((key) => key.id === saved.activeId)?.value ?? "" };
 }

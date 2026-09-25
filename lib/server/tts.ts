@@ -52,10 +52,9 @@ async function boundedJson(response: Response): Promise<unknown> {
 export async function generateSpeech(input: GenerationRequest, clientSignal?: AbortSignal, apiKey?: string): Promise<Uint8Array<ArrayBuffer>> {
   const variant = getVoiceVariant(input.variantId);
   if (!variant) throw new AppError("INVALID_VOICE", "Choose one of the available voice profiles.", 400);
-  const key = apiKey ?? process.env.GEMINI_API_KEY;
+  const key = apiKey;
   if (!key?.trim()) {
-    console.error("voiceover.configuration_missing", { key: "GEMINI_API_KEY" });
-    throw new AppError("NOT_CONFIGURED", "Voice generation hasn’t been configured yet. Please contact the app owner.", 503);
+    throw new AppError("NOT_CONFIGURED", "Add and select an API key in Settings before generating.", 400);
   }
   const controller = new AbortController();
   let timedOut = false;

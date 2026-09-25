@@ -5,7 +5,7 @@ import VoiceoverStudio from "@/components/voiceover-studio";
 import { requestVoiceover } from "@/lib/api-client";
 import { VOICE_PROFILES, VOICE_VARIANTS, getVoiceVariant, variantLabel, type VoiceVariantId } from "@/lib/voice-profiles";
 vi.mock("@/lib/api-client", () => ({ requestVoiceover: vi.fn() }));
-vi.mock("@/components/use-browser-keys", () => ({ useBrowserKeys: () => ({ saved: { activeId: null, keys: [] }, apiKey: "", ready: true, error: "", reload: vi.fn(), change: vi.fn(), useServer: vi.fn() }) }));
+vi.mock("@/components/use-browser-keys", () => ({ useBrowserKeys: () => ({ saved: { activeId: null, keys: [] }, apiKey: "ui-test-key", ready: true, error: "", reload: vi.fn(), change: vi.fn(), useServer: vi.fn() }) }));
 const requestMock = vi.mocked(requestVoiceover);
 beforeEach(() => {
   localStorage.clear(); sessionStorage.clear();

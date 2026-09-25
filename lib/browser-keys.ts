@@ -3,9 +3,20 @@ export type BrowserKeys = { activeId: string | null; keys: SavedKey[] };
 const STORAGE = "vocal.api-keys";
 const LEGACY_KEY = "vocal.gemini-api-key";
 export const emptyKeys = (): BrowserKeys => ({ activeId: null, keys: [] });
+export function removeSavedKey(current: BrowserKeys, id: string): BrowserKeys {
+  const keys = current.keys.filter((key) => key.id !== id);
+  return { keys, activeId: current.activeId === id ? keys[0]?.id ?? null : current.activeId };
+}
 function validateKey(label: string, value: string) {
   if (!value || value.length > 8192 || /[\s\x00-\x1f\x7f]/.test(value) || !label || label.length > 80)
     throw new Error("Enter a key without spaces and a label of up to 80 characters.");
+}
+export function addSavedKey(current: BrowserKeys, label: string, value: string): BrowserKeys {
+  label = label.trim() || `Key ${current.keys.length + 1}`;
+  value = value.trim(); validateKey(label, value);
+  if (current.keys.some((key) => key.value === value)) throw new Error("That API key is already saved.");
+  const key = { id: crypto.randomUUID(), label, value };
+  return { keys: [...current.keys, key], activeId: current.keys.length ? current.activeId : key.id };
 }
 export function editSavedKey(current: BrowserKeys, id: string, label: string, value: string): BrowserKeys {
   label = label.trim(); value = value.trim(); validateKey(label, value);
@@ -20,7 +31,8 @@ function read(): BrowserKeys {
   if (!value || !Array.isArray(value.keys) || !value.keys.every((key) => key && typeof key.id === "string" && typeof key.label === "string" && typeof key.value === "string")
     || (value.activeId !== null && !value.keys.some((key) => key.id === value.activeId)))
     throw new Error("Saved keys could not be read. Check this browser’s site storage.");
-  return value;
+  // Upgrade a previous Server key selection to the first saved browser key.
+  return { ...value, activeId: value.activeId ?? value.keys[0]?.id ?? null };
 }
 export function addKeyLines(current: BrowserKeys, text: string): BrowserKeys {
   const keys = [...current.keys];

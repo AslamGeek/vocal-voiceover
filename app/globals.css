@@ -36,12 +36,12 @@ textarea::placeholder{color:#757f78;opacity:1}
 .saved-key-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:60px;padding:8px 0;font-size:14px}.saved-key-row+ .saved-key-row{border-top:1px solid var(--line)}
 .saved-key-row label{display:flex;align-items:center;gap:12px;min-width:0;flex:1}.saved-key-row>span{flex:1}.saved-key-row span{overflow-wrap:anywhere}
 .saved-key-row input{width:18px;height:18px;accent-color:var(--accent);flex-shrink:0}.saved-key-row small{display:block;color:var(--muted);font-size:12px;margin-top:4px}
-.settings-input-label{font-size:15px;font-weight:600}.keys-input{margin-top:12px;min-height:150px;padding-right:50px}
 .settings-actions{display:flex;flex-wrap:wrap;gap:12px;justify-content:flex-end;margin-top:16px}
-.saved-key-item{border-top:1px solid var(--line)}.key-row-actions{display:flex;flex-wrap:wrap;gap:6px}.key-row-actions button{padding:8px 10px}
-.key-edit-form{padding:8px 0 18px;display:grid;gap:12px}.key-edit-form label{font-size:13px;font-weight:600}
+.saved-key-item{border-top:1px solid var(--line);padding:8px 0 18px}.key-row-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.key-row-actions button{padding:8px 12px;min-height:40px}
+.key-field-label{display:block;font-size:13px;font-weight:600}.new-key-form{display:grid;gap:12px}.new-key-form h3{margin:0;font-size:16px;font-weight:600}.new-key-form .settings-actions{margin-top:0}
+.saved-key-input{font-family:monospace!important;font-size:13px!important}.saved-key-input:read-only{background:#f1f5f2}.saved-key-row strong{overflow-wrap:anywhere;min-width:0}.saved-key-row .use-key{flex:0 0 auto;font-size:13px;color:var(--accent);white-space:nowrap}
 .key-edit-input{display:block;width:100%;margin-top:6px;padding:10px 12px;border:1px solid var(--line);border-radius:7px;background:#fafbfa;font:inherit;font-weight:400;color:var(--ink)}
-@media(max-width:480px){.settings-dialog{padding:20px}.saved-key-row{flex-wrap:wrap}.saved-key-row label{min-width:100%}.key-row-actions{margin-left:30px}}
+@media(max-width:480px){.settings-dialog{padding:20px}.saved-key-row{flex-wrap:wrap}}
 .script-section{padding-bottom:25px;border-bottom:1px solid var(--line)}
 .section-hint{font-size:14px;color:var(--muted);margin:11px 0 15px}
 .persona-input{border:1px solid var(--line);background:#fafbfa;border-radius:9px;padding:14px 16px;min-height:126px;font-size:14px}

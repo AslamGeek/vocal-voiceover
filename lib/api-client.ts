@@ -42,8 +42,8 @@ async function requestSection(input: GenerationRequest, signal: AbortSignal, api
     let code: unknown;
     try { code = (await response.json())?.error?.code; } catch { /* Platform error: use safe fallback. */ }
     const messages: Record<string, string> = {
-      NOT_CONFIGURED: "Voice generation hasn’t been configured yet. Please contact the app owner.",
-      INVALID_API_KEY: "The entered API key was rejected. Check the key and its Gemini API permissions, or clear it to use the server key.",
+      NOT_CONFIGURED: "Add and select an API key in Settings before generating.",
+      INVALID_API_KEY: "The entered API key was rejected. Check it or select another key in Settings.",
       RATE_LIMITED: "The voice service is busy. Wait a moment and try again.",
       TIMEOUT: "Voice generation took too long. Try again with a shorter script.",
       AUDIO_TOO_LONG: "This voiceover is too long. Shorten the script or use a faster delivery.",
