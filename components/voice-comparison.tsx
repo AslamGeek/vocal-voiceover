@@ -68,7 +68,7 @@ export function VoiceComparisonResults({ results, loading }: { results: Audition
     <div className="output-heading"><h2 id="output-title">Voice auditions</h2><span className="output-tag">.WAV</span></div>
     <p className="comparison-status" role="status" aria-live="polite">{results.length
       ? loading ? `${finished} of ${results.length} complete · ${ready} ready to listen` : `${ready} of ${results.length} auditions ready`
-      : "The same words and direction, in different voices."}</p>
+      : "Compare audio from the selected voices."}</p>
     <div ref={players} className="audition-list">
       {results.map((row) => <section className="audition" key={row.voice} aria-label={`${row.voice} audition`}>
         <div className="audition-heading"><h3>{row.voice}</h3><span>{VOICES.find((voice) => voice.id === row.voice)?.description}</span></div>
