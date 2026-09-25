@@ -36,6 +36,18 @@ The selected key is sent to the app’s same-origin API in an Authorization head
 
 Each generation batch captures the selected key for all voices and script sections. Settings is disabled while generating; cancel before switching. Opening Settings cancels a pending preview, and switching keys clears the preview cache. Completed voiceovers remain available. Other open tabs pick up saved changes when Settings is reopened or the page refreshed. A rejected or exhausted key never automatically rotates or silently falls back. Keys from the same Google project share quota.
 
+## Telegram storage
+
+Open **Settings → Telegram**. Create a bot with [BotFather](https://t.me/BotFather), add it to your group, and allow it to send documents. Paste the bot token into Settings (not into a support chat). Enter the numeric group ID or public @groupusername. Alternatively, send /start@YourBotUsername in the group, click **Find groups**, and select the group. Finding groups reads recent bot updates without acknowledging them or changing webhooks; a dedicated bot is easiest. If another service uses this bot or its updates are unavailable, enter the group ID directly. For a forum topic, optionally enter its numeric topic ID.
+
+**Connect & save** checks the bot and group without posting a message, then remembers the token, resolved group ID, title and optional topic in this browser’s plain-text localStorage (vocal.telegram). The bot must retain permission to send documents; a successful connection check does not guarantee future upload permissions. **Remove connection** removes these browser settings, not messages already saved in Telegram.
+
+Each completed voiceover has **Save to Telegram**. Only clicking this button sends that WAV to the saved group. Uploads preserve the original bytes and meaningful filename; they use Telegram’s document method rather than converting to a voice note. The button prevents simultaneous duplicate sends and displays success only after Telegram confirms a sent document. After success, a message link is shown when supported by the group type. Download WAV remains available. Finish or cancel generation before uploading.
+
+Files go directly from the browser to api.telegram.org over HTTPS, bypassing Vercel’s request-body limit. There is no server bot token, new environment variable, proxy, or database. Telegram requires its bot token in the API request path; it is never included in group messages, filenames, app logs or the user-facing page URL. The app omits cookies and referrers from Telegram requests. Save supports WAVs up to 50 MB; larger files must be downloaded and uploaded manually. This uses the [official sendDocument API](https://core.telegram.org/bots/api#senddocument).
+
+Uploads have a two-minute deadline and can be cancelled. A connection loss, timeout or cancellation can leave delivery uncertain: check the group before manually retrying. The app never automatically retries or deletes posted documents. Keep the page open during upload. Tests mock Telegram; real bot permissions, browser/network access to Telegram and successful group delivery require checking with your own connection.
+
 ## Local development
 
 Use Node.js 22.13+ (Node 24 recommended).

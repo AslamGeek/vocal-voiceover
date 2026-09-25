@@ -16,8 +16,8 @@ export function pcmToWav(pcm: Uint8Array): Uint8Array<ArrayBuffer> {
   wav.set(pcm, 44);
   return wav;
 }
-export function isValidWav(bytes: Uint8Array): boolean {
-  if (bytes.byteLength < 46 || bytes.byteLength > MAX_PCM_BYTES + 44) return false;
+export function isValidWav(bytes: Uint8Array, maxBytes = MAX_PCM_BYTES + 44): boolean {
+  if (bytes.byteLength < 46 || bytes.byteLength > maxBytes) return false;
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const str = (start: number, end: number) => String.fromCharCode(...bytes.subarray(start, end));
   return str(0, 4) === "RIFF" && str(8, 16) === "WAVEfmt " && str(36, 40) === "data"

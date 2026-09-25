@@ -1,12 +1,15 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { addSavedKey, editSavedKey, removeSavedKey, type BrowserKeys, type SavedKey } from "@/lib/browser-keys";
+import { TelegramSettings } from "./telegram-settings";
 
-export function KeySettings({ saved, error, change, close, retry }: {
+export function KeySettings({ saved, error, change, close, retry, initialTab = "keys" }: {
   saved: BrowserKeys; error: string; change: (update: (value: BrowserKeys) => BrowserKeys) => Promise<void>;
   close: () => void; retry: () => Promise<void>;
+  initialTab?: "keys" | "telegram";
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const [tab, setTab] = useState(initialTab);
   const [text, setText] = useState(""); const [busy, setBusy] = useState(false);
   const [label, setLabel] = useState("");
   const [editing, setEditing] = useState<SavedKey | null>(null);
@@ -25,6 +28,8 @@ export function KeySettings({ saved, error, change, close, retry }: {
   }
   return <dialog ref={dialog} className="settings-dialog" aria-labelledby="settings-title" onCancel={(event) => { event.preventDefault(); if (!busy) close(); }}>
     <div className="settings-heading"><h2 id="settings-title">Settings</h2><button type="button" className="preview-button" disabled={busy} aria-label="Close Settings" onClick={close}>×</button></div>
+    <div className="settings-tabs" role="tablist" aria-label="Settings sections"><button id="keys-tab" type="button" role="tab" aria-selected={tab === "keys"} aria-controls="keys-panel" disabled={busy} onClick={() => setTab("keys")}>API keys</button><button id="telegram-tab" type="button" role="tab" aria-selected={tab === "telegram"} aria-controls="telegram-panel" disabled={busy} onClick={() => setTab("telegram")}>Telegram</button></div>
+    <div id="keys-panel" role="tabpanel" aria-labelledby="keys-tab" hidden={tab !== "keys"}>
     <p className="section-hint">API keys are saved in this browser. Choose one for Preview and Generate.</p>
     {error && <div role="alert" className="error-message">{error}<div className="settings-actions"><button type="button" className="preview-button" onClick={() => void retry()}>Retry storage</button></div></div>}
     <fieldset className="saved-keys" disabled={busy || !!error}><legend>Active key</legend>
@@ -51,5 +56,7 @@ export function KeySettings({ saved, error, change, close, retry }: {
     </form>
     {(failure || message) && <p role={failure ? "alert" : "status"} className={failure ? "error-message" : "field-hint"}>{failure || message}</p>}
     <p className="field-hint">Keys are stored as plain text on this browser and device. Clearing site data removes them. Keys from the same Google project share quota.</p>
+    </div>
+    {tab === "telegram" && <div id="telegram-panel" role="tabpanel" aria-labelledby="telegram-tab"><TelegramSettings /></div>}
   </dialog>;
 }

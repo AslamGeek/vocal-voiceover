@@ -2,16 +2,18 @@
 import { useState } from "react";
 import { getVoiceVariant, variantLabel } from "@/lib/voice-profiles";
 import type { Audition } from "./use-auditions";
+import { TelegramSave } from "./telegram-save";
 
-function ResultAudio({ row, label }: { row: Audition; label: string }) {
+function ResultAudio({ row, label, onTelegramSetup, loading }: { row: Audition; label: string; onTelegramSetup?: () => void; loading: boolean }) {
   const [failed, setFailed] = useState(false);
   return <div className="audio-result">
     <audio controls src={row.url} preload="metadata" aria-label={`${label} voiceover`} onError={() => setFailed(true)} />
     {failed && <p className="error-message" role="alert">This audio couldn’t be played. Try downloading it or generating it again.</p>}
     <a href={row.url} download={row.filename} title={row.filename} className="download-button" aria-label={`Download ${label} WAV`}>↓ Download WAV</a>
+    {row.url && <TelegramSave url={row.url} filename={row.filename} label={label} onSetup={onTelegramSetup} disabled={loading} />}
   </div>;
 }
-export function AuditionResults({ results, loading }: { results: Audition[]; loading: boolean }) {
+export function AuditionResults({ results, loading, onTelegramSetup }: { results: Audition[]; loading: boolean; onTelegramSetup?: () => void }) {
   const ready = results.filter((row) => row.status === "ready").length;
   const finished = results.filter((row) => !["queued", "generating"].includes(row.status)).length;
   return <section className="output-column" aria-labelledby="results-title">
@@ -25,7 +27,7 @@ export function AuditionResults({ results, loading }: { results: Audition[]; loa
           <div className="audition-heading"><h3>{variant.profile.name}</h3><span>{variant.gender} · {variant.voice}</span></div>
           <p className="audition-status" role="status">{row.status === "queued" ? "Queued" : row.status === "generating" ? <><span className="spinner" aria-hidden="true" />{row.progress && row.progress.total > 1 ? `${row.progress.completed} of ${row.progress.total} sections complete` : "Generating…"}</> : row.status === "ready" ? "Ready" : row.status === "cancelled" ? "Cancelled" : "Failed"}</p>
           {row.error && <p className="error-message" role="alert">{row.error}</p>}
-          {row.url && <ResultAudio key={row.url} row={row} label={label} />}
+          {row.url && <ResultAudio key={row.url} row={row} label={label} onTelegramSetup={onTelegramSetup} loading={loading} />}
         </section>;
       })}
     </div>

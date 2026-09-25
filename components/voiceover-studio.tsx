@@ -17,6 +17,7 @@ export default function VoiceoverStudio() {
   const keys = useBrowserKeys();
   const apiKey = keys.apiKey;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<"keys" | "telegram">("keys");
   const [directions, setDirections] = useState<VoiceDirections>(() => Object.fromEntries(VOICE_VARIANTS.map((variant) => [variant.id, variant.profile.baseDirection])) as VoiceDirections);
   const [selectedVoiceVariants, setSelectedVoiceVariants] = useState<VoiceVariantId[]>([DEFAULT_VARIANT_ID]);
   const [error, setError] = useState("");
@@ -49,8 +50,8 @@ export default function VoiceoverStudio() {
     const current = event.target;
     studio.current?.querySelectorAll("audio").forEach((audio) => { if (audio !== current) audio.pause(); });
   }}>
-    <header className="masthead"><a href="/" className="wordmark" aria-label="Vocal home"><SoundMark /><span>vocal<span className="brand-dot">.</span></span></a><button type="button" className="preview-button" disabled={auditions.loading} onClick={() => { pauseAudio(); previews.stop(); setSettingsOpen(true); void keys.reload(); }}>Settings</button></header>
-    {settingsOpen && <KeySettings saved={keys.saved} error={keys.error} change={keys.change} close={() => setSettingsOpen(false)} retry={keys.reload} />}
+    <header className="masthead"><a href="/" className="wordmark" aria-label="Vocal home"><SoundMark /><span>vocal<span className="brand-dot">.</span></span></a><button type="button" className="preview-button" disabled={auditions.loading} onClick={() => { pauseAudio(); previews.stop(); setSettingsTab("keys"); setSettingsOpen(true); void keys.reload(); }}>Settings</button></header>
+    {settingsOpen && <KeySettings initialTab={settingsTab} saved={keys.saved} error={keys.error} change={keys.change} close={() => setSettingsOpen(false)} retry={keys.reload} />}
     <main>
       <div className="page-heading"><h1>Voiceover studio</h1><span className="format-note">WAV <span>/</span> 24 kHz <span>/</span> 16-bit</span></div>
       {keys.error && <p role="alert" className="error-message">Saved keys couldn’t be loaded. Open Settings to retry.</p>}
@@ -107,7 +108,7 @@ export default function VoiceoverStudio() {
           <div className="generate-row">{auditions.loading && <button className="generate-button cancel-button" type="button" onClick={auditions.cancel}>Cancel</button>}<button className="generate-button" type="submit" disabled={auditions.loading || !keys.ready || !apiKey || !text.trim() || overLimit || !selectedVoiceVariants.length}>{auditions.loading ? <><span className="spinner" />Generating…</> : <><SoundMark />Generate</>}</button></div>
           {error && <p className="error-message" role="alert">{error}</p>}
         </form>
-        <AuditionResults results={auditions.results} loading={auditions.loading} />
+        <AuditionResults results={auditions.results} loading={auditions.loading} onTelegramSetup={() => { pauseAudio(); previews.stop(); setSettingsTab("telegram"); setSettingsOpen(true); }} />
       </div>
     </main>
   </div>;

@@ -32,6 +32,8 @@ textarea::placeholder{color:#757f78;opacity:1}
 .settings-dialog::backdrop{background:#132d2266}
 .settings-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.settings-heading h2{margin:0;font-size:24px;font-weight:500}
 .settings-heading button{font-size:24px;line-height:1;min-width:40px}
+.settings-tabs{display:flex;gap:8px;border-bottom:1px solid var(--line);margin-top:20px}.settings-tabs button{border:0;border-bottom:2px solid transparent;background:transparent;padding:12px 16px;font:inherit;font-size:14px;cursor:pointer;color:var(--muted)}.settings-tabs button[aria-selected=true]{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.telegram-steps{padding-left:20px;font-size:13px;line-height:1.7;color:var(--muted)}.telegram-steps li{margin-bottom:8px}.telegram-connected{font-size:14px;background:#edf4ee;padding:12px;border-radius:8px}.telegram-button{width:100%;color:var(--accent);font:inherit;font-size:14px;cursor:pointer;margin-top:10px}.telegram-save>.preview-button{margin-top:8px}
 .saved-keys{border:1px solid var(--line);border-radius:9px;padding:8px 14px;margin:22px 0}.saved-keys legend{font-size:14px;padding:0 6px}
 .saved-key-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:60px;padding:8px 0;font-size:14px}.saved-key-row+ .saved-key-row{border-top:1px solid var(--line)}
 .saved-key-row label{display:flex;align-items:center;gap:12px;min-width:0;flex:1}.saved-key-row>span{flex:1}.saved-key-row span{overflow-wrap:anywhere}
