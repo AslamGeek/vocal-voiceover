@@ -38,9 +38,9 @@ Alternatively, from this folder, run `npx vercel`, configure the environment var
 
 ## Push future changes on Windows
 
-Double-click `push-changes.cmd` in this folder. It stages all non-ignored changes (including deletions), commits them with a timestamp, pushes the current branch to `origin`, and closes automatically. When there are no changes, it still pushes any existing unpushed commits. It never force-pushes or pulls automatically and stops on unresolved conflicts or failed commands. Git must be installed and signed in.
+Double-click `push-changes.cmd` in this folder. It shows the changed files and staged summary, stages all non-ignored changes (including deletions), commits them with a timestamp, and pushes the current branch to `origin`. Commit and push output stay visible, then the window closes after three seconds. When there are no changes, it still pushes any existing unpushed commits. It never force-pushes or pulls automatically and stops on unresolved conflicts or failed commands. Git must be installed and signed in.
 
-The result and any errors are recorded in `.git/push-changes.log`. Local `.env` files, dependencies and build output are ignored; `.env.example` is intentionally included. Review changes before running the script because the repository is public. Only the first push is handled during initial setup; future pushes are yours.
+Errors appear in the same window before the three-second closing delay. Local `.env` files, dependencies and build output are ignored; `.env.example` is intentionally included. Review changes before running the script because the repository is public. Only the first push is handled during initial setup; future pushes are yours. To keep the output visible for troubleshooting, run the script from an already-open Command Prompt.
 
 This app deliberately has no user accounts. For a personal deployment, use Vercel Deployment Protection to control access. If you make it public, apply host-level rate limits and provider quotas to the paid generation endpoint. The origin check is a browser CSRF defense, not authentication.
 
