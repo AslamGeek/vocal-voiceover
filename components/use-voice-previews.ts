@@ -14,7 +14,7 @@ export function useVoicePreviews() {
     cache.current.forEach(({ url }) => URL.revokeObjectURL(url)); cache.current.clear();
   }, []);
 
-  async function load(variantId: VoiceVariantId, direction: string) {
+  async function load(variantId: VoiceVariantId, direction: string, apiKey = "") {
     const variant = getVoiceVariant(variantId);
     if (!variant || (pending.current?.variantId === variantId && pending.current.direction === direction)) return;
     pending.current?.controller.abort(); pending.current = null;
@@ -26,7 +26,7 @@ export function useVoicePreviews() {
     pending.current = request;
     setPreview({ variantId, playId, loading: true });
     try {
-      const blob = await requestVoiceover({ text: variant.profile.previewScript, direction, variantId }, request.controller.signal);
+      const blob = await requestVoiceover({ text: variant.profile.previewScript, direction, variantId }, request.controller.signal, undefined, apiKey);
       if (pending.current !== request || request.controller.signal.aborted) return;
       const url = URL.createObjectURL(blob);
       cache.current.set(variantId, { direction, url });
@@ -44,5 +44,9 @@ export function useVoicePreviews() {
     URL.revokeObjectURL(preview.url); cache.current.delete(preview.variantId);
     setPreview({ ...preview, url: undefined, error: "This preview couldn’t be played. Select Preview to try again." });
   }
-  return { preview, load, stop, playbackFailed };
+  function reset() {
+    stop();
+    cache.current.forEach(({ url }) => URL.revokeObjectURL(url)); cache.current.clear();
+  }
+  return { preview, load, stop, reset, playbackFailed };
 }

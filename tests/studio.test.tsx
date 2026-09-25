@@ -7,6 +7,7 @@ import { VOICE_PROFILES, VOICE_VARIANTS, getVoiceVariant, variantLabel, type Voi
 vi.mock("@/lib/api-client", () => ({ requestVoiceover: vi.fn() }));
 const requestMock = vi.mocked(requestVoiceover);
 beforeEach(() => {
+  localStorage.clear(); sessionStorage.clear();
   requestMock.mockReset();
   let id = 0;
   URL.createObjectURL = vi.fn(() => `blob:voice-${++id}`);
@@ -47,6 +48,56 @@ it("shows exactly five profiles with ten independent variants and a warm female 
   fireEvent.submit(screen.getByRole("button", { name: "Generate" }).closest("form")!);
   expect(screen.getByRole("alert").textContent).toContain("at least one");
   expect(requestMock).not.toHaveBeenCalled();
+});
+
+it("uses the entered key for preview and generation, persists it across remounts, and removes it when cleared", async () => {
+  requestMock.mockResolvedValue(new Blob(["wav"])); const view = render(<VoiceoverStudio />); fill();
+  const keyField = screen.getByLabelText("Gemini API key") as HTMLInputElement;
+  expect(keyField.type).toBe("password"); expect(keyField.value).toBe("");
+  fireEvent.change(keyField, { target: { value: "personal-first" } });
+  fireEvent.click(previewButton("warm-female")); await screen.findByLabelText(`${label("warm-female")} preview`);
+  expect(requestMock.mock.calls[0][3]).toBe("personal-first");
+  fireEvent.change(keyField, { target: { value: "personal-second" } });
+  expect(screen.queryByLabelText("Voice preview")).toBeNull();
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:voice-1");
+  fireEvent.click(previewButton("warm-female")); await screen.findByLabelText(`${label("warm-female")} preview`);
+  expect(requestMock.mock.calls[1][3]).toBe("personal-second");
+  fireEvent.click(checkbox("warm-male")); generate(); await screen.findByText("2 of 2 auditions ready");
+  expect(requestMock.mock.calls.slice(2).map((call) => call[3])).toEqual(["personal-second", "personal-second"]);
+  fireEvent.click(screen.getByRole("button", { name: "Clear API key" }));
+  expect(keyField.value).toBe(""); expect(document.activeElement).toBe(keyField);
+  expect(localStorage.getItem("vocal.gemini-api-key")).toBeNull();
+  fireEvent.click(previewButton("warm-female")); await screen.findByLabelText(`${label("warm-female")} preview`);
+  expect(requestMock.mock.calls.at(-1)![3]).toBe("");
+  fireEvent.change(keyField, { target: { value: "remembered-on-reload" } });
+  expect(localStorage.getItem("vocal.gemini-api-key")).toBe("remembered-on-reload");
+  expect(sessionStorage.length).toBe(0);
+  view.unmount(); render(<VoiceoverStudio />);
+  expect((screen.getByLabelText("Gemini API key") as HTMLInputElement).value).toBe("remembered-on-reload");
+});
+
+it("keeps the entered key usable and reports when browser storage cannot save it", async () => {
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("Storage unavailable", "SecurityError"); });
+  requestMock.mockResolvedValue(new Blob(["wav"])); render(<VoiceoverStudio />); fill();
+  fireEvent.change(screen.getByLabelText("Gemini API key"), { target: { value: "temporary-personal-key" } });
+  expect(screen.getByText(/Browser storage is unavailable/).getAttribute("role")).toBe("status");
+  generate(); await screen.findByText("1 of 1 auditions ready");
+  expect(requestMock.mock.calls[0][3]).toBe("temporary-personal-key");
+});
+
+it("cancels pending previews on key changes and locks the key while generating", async () => {
+  const pending = pendingRequests(); render(<VoiceoverStudio />); fill();
+  const keyField = screen.getByLabelText("Gemini API key") as HTMLInputElement;
+  fireEvent.click(previewButton("warm-male"));
+  fireEvent.change(keyField, { target: { value: "new-personal-key" } });
+  expect(requestMock.mock.calls[0][1].aborted).toBe(true);
+  await act(async () => pending.get("warm-male")!.resolve(new Blob(["old preview"])));
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
+  generate(); expect(keyField.disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Clear API key" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(keyField.disabled).toBe(false);
+  await act(async () => pending.get("warm-female")!.resolve(new Blob(["cancelled audio"])));
 });
 
 it("uses one result path for one voice, locks duplicate submissions, and preserves filenames after edits", async () => {

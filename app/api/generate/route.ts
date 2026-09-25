@@ -39,7 +39,15 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const input = validateRequest(await readRequest(request));
     if (!fitsSection(input.text)) throw new AppError("SECTION_TOO_LONG", "Generate long scripts through the studio so they can be processed in sections.", 400);
-    const wav = await generateSpeech(input, request.signal);
+    // The caller's key is request-scoped and never replaces the server environment.
+    const authorization = request.headers.get("authorization");
+    let apiKey: string | undefined;
+    if (authorization !== null) {
+      const match = /^Bearer (.+)$/i.exec(authorization);
+      if (!match?.[1].trim() || match[1].length > 8192) throw new AppError("INVALID_API_KEY", "Enter one Gemini API key.", 400);
+      apiKey = match[1].trim();
+    }
+    const wav = await generateSpeech(input, request.signal, apiKey);
     return new Response(wav, { headers: {
       "Content-Type": "audio/wav", "Content-Length": String(wav.byteLength),
       "Content-Disposition": 'attachment; filename="voiceover.wav"',

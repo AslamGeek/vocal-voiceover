@@ -26,6 +26,14 @@ Every variant has a **Preview** button. It generates the profile's short sample 
 
 One unified queue generates up to two voices concurrently, with sequential sections within each voice. Each voice receives the exact same transcript and its own direction, captured when Generate is pressed; its default direction and provider voice come from its profile. Results show the profile, gender, provider voice, queue/progress status, player, individual error, and download. Failed voices do not remove successful outputs. Cancel stops active requests and queued work while retaining completed downloads. Starting a new batch replaces previous audition results. Each voice uses one provider call per section; previews also consume a provider call on first use. There are no automatic retries.
 
+## API key in the studio
+
+The optional **Gemini API key** password field accepts one key for Preview and Generate. Leave it blank (or use × to clear it) to use the server's `GEMINI_API_KEY`. The Vercel key is never returned to the browser or prefilled into this field. At the user's request, an entered key is saved in this browser's localStorage under `vocal.gemini-api-key` and restored after refresh or reopening the app at the same origin. The × removes the saved key. It is not synchronized between devices or browser profiles. Like other localStorage values it is readable by JavaScript on this origin; use your own browser profile. If browser storage is blocked, the UI reports that the edit is temporary. Keys are never put in sessionStorage, cookies, URLs, transcript JSON, downloads, or app logs.
+
+The browser sends the entered key to this app's same-origin API in an Authorization header; the server uses it only for that request, forwarding it to the fixed Gemini endpoint without following redirects. Deploy with HTTPS. It does not change Vercel environment variables or another visitor's key. Each voice and script section in a generation batch uses the key captured at the start; cancel the batch before switching. Switching keys cancels pending previews and clears their cache. Completed voiceovers remain available. A rejected or exhausted entered key never silently falls back to the server key.
+
+An entered key can be used without a configured server key. Google project/model limits still apply: keys in the same project share quota. There is no automatic key rotation or retry loop.
+
 ## Local development
 
 Use Node.js 22.13+ (Node 24 recommended).
@@ -48,7 +56,7 @@ npm run build
 npm start
 ```
 
-Tests mock Gemini: they do not use a real key or incur provider charges. Building does not require a key; generation returns a clear configuration error when it is missing.
+Tests mock Gemini: they do not use a real key or incur provider charges. Building does not require a key; generation needs either an entered key or the server’s GEMINI_API_KEY.
 
 ## Deploy to Vercel
 

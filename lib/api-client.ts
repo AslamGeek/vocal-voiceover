@@ -4,7 +4,7 @@ import { splitScript } from "./script";
 export type GenerationProgress = { completed: number; total: number };
 export const SECTION_TIMEOUT_MS = 115_000;
 
-export async function requestVoiceover(input: GenerationRequest, signal: AbortSignal, onProgress?: (progress: GenerationProgress) => void): Promise<Blob> {
+export async function requestVoiceover(input: GenerationRequest, signal: AbortSignal, onProgress?: (progress: GenerationProgress) => void, apiKey = ""): Promise<Blob> {
   const validated = validateRequest(input);
   const sections = splitScript(validated.text).filter((section) => section.trim());
   const audio: Uint8Array<ArrayBuffer>[] = [];
@@ -16,7 +16,7 @@ export async function requestVoiceover(input: GenerationRequest, signal: AbortSi
     signal.addEventListener("abort", cancel, { once: true });
     const timer = setTimeout(() => controller.abort("timeout"), SECTION_TIMEOUT_MS);
     try {
-      audio.push(await requestSection({ ...validated, text }, controller.signal));
+      audio.push(await requestSection({ ...validated, text }, controller.signal, apiKey));
       signal.throwIfAborted();
       onProgress?.({ completed: audio.length, total: sections.length });
     } catch (error) {
@@ -32,15 +32,18 @@ export async function requestVoiceover(input: GenerationRequest, signal: AbortSi
   return joinWavSections(audio);
 }
 
-async function requestSection(input: GenerationRequest, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+async function requestSection(input: GenerationRequest, signal: AbortSignal, apiKey: string): Promise<Uint8Array<ArrayBuffer>> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (apiKey.trim()) headers.Authorization = `Bearer ${apiKey.trim()}`;
   const response = await fetch("/api/generate", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal,
+    method: "POST", headers, body: JSON.stringify(input), signal, cache: "no-store",
   });
   if (!response.ok) {
     let code: unknown;
     try { code = (await response.json())?.error?.code; } catch { /* Platform error: use safe fallback. */ }
     const messages: Record<string, string> = {
       NOT_CONFIGURED: "Voice generation hasn’t been configured yet. Please contact the app owner.",
+      INVALID_API_KEY: "The entered API key was rejected. Check the key and its Gemini API permissions, or clear it to use the server key.",
       RATE_LIMITED: "The voice service is busy. Wait a moment and try again.",
       TIMEOUT: "Voice generation took too long. Try again with a shorter script.",
       AUDIO_TOO_LONG: "This voiceover is too long. Shorten the script or use a faster delivery.",

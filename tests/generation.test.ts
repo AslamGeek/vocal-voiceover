@@ -17,6 +17,44 @@ beforeEach(() => { vi.stubEnv("GEMINI_API_KEY", "test-key-not-real"); vi.spyOn(c
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("request validation and endpoint", () => {
+  it.each(["", "server-secret"])("uses a request-scoped key with or without a server key (%s)", async (serverKey) => {
+    vi.stubEnv("GEMINI_API_KEY", serverKey);
+    const personalKey = "personal-key.with-punctuation";
+    const fetchMock = vi.fn().mockResolvedValue(providerResponse()); vi.stubGlobal("fetch", fetchMock);
+    const response = await POST(request(input, { Authorization: `Bearer ${personalKey}` }));
+    expect(response.status).toBe(200);
+    expect(fetchMock.mock.calls[0][1].headers["x-goog-api-key"]).toBe(personalKey);
+    expect(fetchMock.mock.calls[0][1].body).not.toContain(personalKey);
+    expect(process.env.GEMINI_API_KEY).toBe(serverKey);
+    expect(JSON.stringify([...response.headers])).not.toContain(personalKey);
+  });
+  it("isolates simultaneous callers' keys and retains the server fallback", async () => {
+    const keys: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url, init) => { keys.push(init.headers["x-goog-api-key"]); return providerResponse(); }));
+    const responses = await Promise.all([
+      POST(request(input, { Authorization: "Bearer caller-one" })),
+      POST(request(input, { Authorization: "Bearer caller-two" })),
+      POST(request()),
+    ]);
+    expect(responses.every((response) => response.status === 200)).toBe(true);
+    expect(keys.sort()).toEqual(["caller-one", "caller-two", "test-key-not-real"]);
+  });
+  it.each([401, 403, 429])("never falls back or leaks a supplied key after provider %s", async (status) => {
+    const key = "personal-secret";
+    const fetchMock = vi.fn().mockResolvedValue(new Response(`private failure with ${key}`, { status })); vi.stubGlobal("fetch", fetchMock);
+    const response = await POST(request(input, { Authorization: `Bearer ${key}` }));
+    expect((await response.text())).not.toContain(key);
+    expect(response.status).toBe(status === 429 ? 429 : 401);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain(key);
+  });
+  it.each(["Basic private-key", "Bearer", `Bearer ${"x".repeat(8193)}`])("rejects an unusable authorization header before fetching", async (authorization) => {
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    const response = await POST(request(input, { Authorization: authorization }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe("INVALID_API_KEY");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it("preserves script and direction exactly and defaults optional fields", () => {
     expect(validateRequest(input)).toEqual(input);
     expect(validateRequest({ text: "Hello" })).toEqual({ text: "Hello", direction: "", variantId: "warm-female" });

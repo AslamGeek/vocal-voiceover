@@ -49,10 +49,10 @@ async function boundedJson(response: Response): Promise<unknown> {
     catch { throw invalidAudio(); }
   } finally { reader.releaseLock(); }
 }
-export async function generateSpeech(input: GenerationRequest, clientSignal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+export async function generateSpeech(input: GenerationRequest, clientSignal?: AbortSignal, apiKey?: string): Promise<Uint8Array<ArrayBuffer>> {
   const variant = getVoiceVariant(input.variantId);
   if (!variant) throw new AppError("INVALID_VOICE", "Choose one of the available voice profiles.", 400);
-  const key = process.env.GEMINI_API_KEY;
+  const key = apiKey ?? process.env.GEMINI_API_KEY;
   if (!key?.trim()) {
     console.error("voiceover.configuration_missing", { key: "GEMINI_API_KEY" });
     throw new AppError("NOT_CONFIGURED", "Voice generation hasn’t been configured yet. Please contact the app owner.", 503);
@@ -65,7 +65,7 @@ export async function generateSpeech(input: GenerationRequest, clientSignal?: Ab
   if (clientSignal?.aborted) controller.abort();
   try {
     const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-      method: "POST", signal: controller.signal, cache: "no-store",
+      method: "POST", signal: controller.signal, cache: "no-store", redirect: "error",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
         model: "gemini-3.8-flash-tts", store: false,
@@ -79,6 +79,7 @@ export async function generateSpeech(input: GenerationRequest, clientSignal?: Ab
     if (!response.ok) {
       console.error("voiceover.provider_failure", { status: response.status });
       await response.body?.cancel();
+      if (apiKey && (response.status === 401 || response.status === 403)) throw new AppError("INVALID_API_KEY", "The entered API key was rejected. Check its Gemini API permissions.", 401);
       if (response.status === 429) throw new AppError("RATE_LIMITED", "The voice service is busy. Wait a moment and try again.", 429);
       if (response.status === 408 || response.status === 504) throw new AppError("TIMEOUT", "Voice generation took too long. Try again with a shorter script.", 504);
       throw unavailable();

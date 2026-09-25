@@ -22,7 +22,7 @@ export function useAuditions() {
     urls.current.forEach((url) => URL.revokeObjectURL(url)); urls.current = [];
   }, []);
 
-  async function generate(text: string, directions: VoiceDirections, variantIds: VoiceVariantId[]) {
+  async function generate(text: string, directions: VoiceDirections, variantIds: VoiceVariantId[], apiKey = "") {
     if (active.current) return;
     if (!variantIds.length) throw new Error("Select at least one voice.");
     const inputs = [...new Set(variantIds)].map((variantId) => validateRequest({ text, direction: directions[variantId], variantId }));
@@ -41,7 +41,7 @@ export function useAuditions() {
         const input = inputs[next++];
         update(input.variantId, { status: "generating" });
         try {
-          const blob = await requestVoiceover(input, batch.signal, (progress) => update(input.variantId, { progress }));
+          const blob = await requestVoiceover(input, batch.signal, (progress) => update(input.variantId, { progress }), apiKey);
           if (active.current !== batch || batch.signal.aborted) return;
           const url = URL.createObjectURL(blob);
           urls.current.push(url);

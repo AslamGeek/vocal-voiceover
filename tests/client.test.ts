@@ -8,6 +8,23 @@ it("accepts a valid WAV as a playable Blob", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(pcmToWav(new Uint8Array(480)), { headers: { "Content-Type": "audio/wav" } })));
   const blob = await requestVoiceover(input, new AbortController().signal);
   expect(blob.type).toBe("audio/wav"); expect(blob.size).toBe(524);
+  expect(vi.mocked(fetch).mock.calls[0][1]?.headers).toEqual({ "Content-Type": "application/json" });
+});
+it("sends the entered key only in the authorization header for every script section", async () => {
+  const fetchMock = vi.fn(async () => new Response(pcmToWav(new Uint8Array(2)), { headers: { "Content-Type": "audio/wav" } }));
+  vi.stubGlobal("fetch", fetchMock);
+  await requestVoiceover({ ...input, text: "word ".repeat(201) }, new AbortController().signal, undefined, "  personal-secret  ");
+  expect(fetchMock.mock.calls).toHaveLength(3);
+  for (const [url, init] of vi.mocked(fetch).mock.calls) {
+    expect(url).toBe("/api/generate");
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer personal-secret");
+    expect(init?.body).not.toContain("personal-secret");
+    expect(init?.cache).toBe("no-store");
+  }
+});
+it("shows a safe entered-key rejection without raw provider text", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: { code: "INVALID_API_KEY", message: "private-key-contents" } }, { status: 401 })));
+  await expect(requestVoiceover(input, new AbortController().signal, undefined, "private-key-contents")).rejects.toThrow("The entered API key was rejected.");
 });
 it("rejects malformed successful audio responses", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("broken", { headers: { "Content-Type": "audio/wav" } })));
