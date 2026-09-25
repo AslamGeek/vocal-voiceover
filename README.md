@@ -73,6 +73,8 @@ GEMINI_API_FAILOVER_ON_TRANSIENT_ERRORS=false
 
 All keys, active-key state, error-body inspection, and selection logic remain in a module protected by Next's **server-only** marker. Keys are sent only to the fixed Gemini endpoint in the x-goog-api-key header, never in URLs, browser responses, client bundles, or logs. Errors expose only the existing safe code/message; provider error text is never forwarded. When the pool is exhausted, the final failure is normalized through the same API error path. Failover can create additional billable requests, but does not multiply quota.
 
+Configuration failures retain the `NOT_CONFIGURED` code and include a fixed `configurationReason` in the response and runtime log: `MISSING_KEY`, `INVALID_SINGLE_KEY`, `INVALID_KEY_LIST`, `INVALID_QUOTA_SETTING`, or `INVALID_TRANSIENT_SETTING`. The studio shows an actionable, locally defined message for each reason and ignores unknown reasons and raw server messages. No key values are included. A non-empty invalid pool still takes precedence over a valid single key; correct or remove the pool instead of silently bypassing it.
+
 ## Checks and production
 
 ```sh

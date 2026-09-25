@@ -1,21 +1,22 @@
 import "server-only";
-import { AppError } from "../contracts";
+import { AppError, CONFIGURATION_MESSAGES, type ConfigurationReason } from "../contracts";
 
 type KeyPool = { keys: string[]; active: number; independentProjects: boolean; transientFailover: boolean; signature: string };
 let currentPool: KeyPool | undefined;
-const configurationError = () => new AppError("NOT_CONFIGURED", "Voice generation hasn’t been configured yet. Please contact the app owner.", 503);
-function flag(value: string | undefined): boolean {
+const configurationError = (reason: ConfigurationReason) => new AppError("NOT_CONFIGURED", CONFIGURATION_MESSAGES[reason], 503, reason);
+function flag(value: string | undefined, reason: ConfigurationReason): boolean {
   if (!value?.trim() || value.trim() === "false") return false;
   if (value.trim() === "true") return true;
-  throw configurationError();
+  throw configurationError(reason);
 }
 function getPool(): KeyPool {
   const list = process.env.GEMINI_API_KEYS?.trim();
+  if (!list && !process.env.GEMINI_API_KEY?.trim()) throw configurationError("MISSING_KEY");
   const keys = [...new Set(list ? list.split(",").map((key) => key.trim()) : [process.env.GEMINI_API_KEY?.trim() ?? ""])];
   // Validate safe token syntax without assuming a fixed provider key length.
-  if (keys.some((key) => !/^[A-Za-z0-9_-]{1,256}$/.test(key))) throw configurationError();
-  const independentProjects = flag(process.env.GEMINI_API_KEYS_INDEPENDENT_PROJECTS);
-  const transientFailover = flag(process.env.GEMINI_API_FAILOVER_ON_TRANSIENT_ERRORS);
+  if (keys.some((key) => !/^[A-Za-z0-9_-]{1,256}$/.test(key))) throw configurationError(list ? "INVALID_KEY_LIST" : "INVALID_SINGLE_KEY");
+  const independentProjects = flag(process.env.GEMINI_API_KEYS_INDEPENDENT_PROJECTS, "INVALID_QUOTA_SETTING");
+  const transientFailover = flag(process.env.GEMINI_API_FAILOVER_ON_TRANSIENT_ERRORS, "INVALID_TRANSIENT_SETTING");
   const signature = JSON.stringify([keys, independentProjects, transientFailover]);
   if (!currentPool || currentPool.signature !== signature) currentPool = { keys, active: 0, independentProjects, transientFailover, signature };
   return currentPool;

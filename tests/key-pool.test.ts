@@ -17,6 +17,28 @@ beforeEach(async () => {
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 const send = (signal = new AbortController().signal) => requestGemini(payload, signal);
 
+it.each([
+  [{ GEMINI_API_KEY: "", GEMINI_API_KEYS: "" }, "MISSING_KEY"],
+  [{ GEMINI_API_KEY: "secret-one,secret-two", GEMINI_API_KEYS: "" }, "INVALID_SINGLE_KEY"],
+  [{ GEMINI_API_KEY: "valid-single", GEMINI_API_KEYS: "secret-one," }, "INVALID_KEY_LIST"],
+  [{ GEMINI_API_KEYS_INDEPENDENT_PROJECTS: "secret-incorrect-setting" }, "INVALID_QUOTA_SETTING"],
+  [{ GEMINI_API_FAILOVER_ON_TRANSIENT_ERRORS: "secret-incorrect-setting" }, "INVALID_TRANSIENT_SETTING"],
+])("identifies configuration failures without exposing values (%s)", async (environment, reason) => {
+  for (const [name, value] of Object.entries(environment)) vi.stubEnv(name, value);
+  const { POST } = await import("@/app/api/generate/route");
+  const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+  const response = await POST(new Request("http://localhost/api/generate", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: "Hello", direction: "", variantId: "warm-female" }),
+  }));
+  const body = await response.json();
+  expect(response.status).toBe(503);
+  expect(body.error).toMatchObject({ code: "NOT_CONFIGURED", configurationReason: reason });
+  expect(fetchMock).not.toHaveBeenCalled();
+  const exposed = JSON.stringify(body) + JSON.stringify(vi.mocked(console.error).mock.calls);
+  for (const value of ["secret-one", "secret-two", "valid-single", "secret-incorrect-setting", "legacy-key"]) expect(exposed).not.toContain(value);
+});
+
 it("keeps legacy single-key behavior when the pool is unset or blank", async () => {
   vi.stubEnv("GEMINI_API_KEYS", "  ");
   vi.stubEnv("GEMINI_API_KEY", "  legacy-key  ");

@@ -2,8 +2,17 @@ import { afterEach, expect, it, vi } from "vitest";
 import { requestVoiceover, SECTION_TIMEOUT_MS } from "@/lib/api-client";
 import { pcmToWav, MAX_PCM_BYTES } from "@/lib/audio";
 import { fitsSection, splitScript } from "@/lib/script";
+import { CONFIGURATION_MESSAGES } from "@/lib/contracts";
 const input = { text: "Hello", direction: "", variantId: "firm-female" as const };
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+it.each(Object.entries(CONFIGURATION_MESSAGES))("shows the safe configuration diagnostic for %s", async (configurationReason, message) => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: { code: "NOT_CONFIGURED", configurationReason, message: "secret provider value" } }, { status: 503 })));
+  await expect(requestVoiceover(input, new AbortController().signal)).rejects.toThrow(message);
+});
+it.each(["secret-unknown-reason", "__proto__", "toString"])("does not display unknown configuration diagnostics (%s)", async (configurationReason) => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: { code: "NOT_CONFIGURED", configurationReason, message: "secret provider value" } }, { status: 503 })));
+  await expect(requestVoiceover(input, new AbortController().signal)).rejects.toThrow("hasn’t been configured");
+});
 it("accepts a valid WAV as a playable Blob", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(pcmToWav(new Uint8Array(480)), { headers: { "Content-Type": "audio/wav" } })));
   const blob = await requestVoiceover(input, new AbortController().signal);
