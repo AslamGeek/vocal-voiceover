@@ -21,6 +21,7 @@ export default function VoiceoverStudio() {
   const studio = useRef<HTMLDivElement | null>(null);
   const words = countWords(text);
   const overLimit = words > MAX_SCRIPT_WORDS;
+  const allVoicesSelected = selectedVoiceVariants.length === VOICE_VARIANTS.length;
   const previewVariant = previews.preview ? getVoiceVariant(previews.preview.variantId) : undefined;
 
   function pauseAudio() { studio.current?.querySelectorAll("audio").forEach((audio) => audio.pause()); }
@@ -56,6 +57,10 @@ export default function VoiceoverStudio() {
           <section className="profiles-section" aria-labelledby="profiles-title">
             <div className="label-row"><h2 id="profiles-title"><span className="step">02</span> Voice Profiles</h2><span className="character-count">{selectedVoiceVariants.length} selected</span></div>
             <p className="section-hint" id="profiles-hint">Select one or more voices. Preview uses a short sample and is cached for this session.</p>
+            <label className="select-all-voices"><input type="checkbox" checked={allVoicesSelected} disabled={auditions.loading}
+              ref={(input) => { if (input) input.indeterminate = selectedVoiceVariants.length > 0 && !allVoicesSelected; }}
+              onChange={(event) => { setSelectedVoiceVariants(event.target.checked ? VOICE_VARIANTS.map((variant) => variant.id) : []); setError(""); }}
+            />Select all voices</label>
             <div className="profile-grid">
               {VOICE_PROFILES.map((profile) => <fieldset className="profile-card" key={profile.id} disabled={auditions.loading}>
                 <legend>{profile.name}</legend><p>{profile.description}</p>

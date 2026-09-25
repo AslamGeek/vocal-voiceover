@@ -60,6 +60,10 @@ textarea::placeholder{color:#757f78;opacity:1}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 
 .profiles-section{padding:25px 0;border-bottom:1px solid var(--line)}
+.select-all-voices{display:flex;align-items:center;gap:10px;width:fit-content;min-height:44px;margin-bottom:12px;font-size:14px;cursor:pointer}
+.select-all-voices:has(input:disabled){opacity:.58;cursor:default}
+.select-all-voices input{accent-color:var(--accent);width:18px;height:18px;margin:0}
+.select-all-voices input:focus-visible{outline:3px solid #3d8a69;outline-offset:3px}
 .profile-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:18px}
 .profile-card{margin:0;padding:16px;border:1px solid var(--line);border-radius:9px;min-width:0}
 .profile-card:has(input:checked){border-color:#7eab91;background:#f4f8f5}

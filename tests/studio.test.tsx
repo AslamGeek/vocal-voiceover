@@ -34,7 +34,7 @@ it("shows exactly five profiles with ten independent variants and a warm female 
   render(<VoiceoverStudio />);
   expect(VOICE_PROFILES).toHaveLength(5);
   expect(screen.getAllByRole("group")).toHaveLength(5);
-  expect(screen.getAllByRole("checkbox")).toHaveLength(10);
+  expect(screen.getAllByRole("checkbox")).toHaveLength(11);
   expect(screen.getAllByRole("button", { name: /^Preview / })).toHaveLength(10);
   expect(checkbox("warm-female").checked).toBe(true);
   expect(screen.getAllByRole("checkbox").filter((element) => (element as HTMLInputElement).checked)).toHaveLength(1);
@@ -55,6 +55,7 @@ it("uses one result path for one voice, locks duplicate submissions, and preserv
   expect(requestMock).toHaveBeenCalledTimes(1);
   expect(requestMock.mock.calls[0][0]).toEqual({ text: "Hello, world.", direction: "", variantId: "warm-female" });
   expect(checkbox("warm-male").closest("fieldset")?.disabled).toBe(true);
+  expect((screen.getByRole("checkbox", { name: "Select all voices" }) as HTMLInputElement).disabled).toBe(true);
   await act(async () => pending.get("warm-female")!.resolve(new Blob(["wav"])));
   expect(resultPlayer("warm-female").getAttribute("src")).toBe("blob:voice-1");
   const filename = download("warm-female").getAttribute("download");
@@ -86,7 +87,14 @@ it("generates four voices including both genders with at most two requests and p
 
 it("allows all ten variants and continues the bounded queue", async () => {
   requestMock.mockResolvedValue(new Blob(["wav"])); render(<VoiceoverStudio />); fill();
-  VOICE_VARIANTS.slice(1).forEach((variant) => fireEvent.click(checkbox(variant.id)));
+  const selectAll = screen.getByRole("checkbox", { name: "Select all voices" }) as HTMLInputElement;
+  expect(selectAll.indeterminate).toBe(true);
+  fireEvent.click(selectAll);
+  expect(VOICE_VARIANTS.every((variant) => checkbox(variant.id).checked)).toBe(true);
+  fireEvent.click(selectAll);
+  expect(VOICE_VARIANTS.every((variant) => !checkbox(variant.id).checked)).toBe(true);
+  expect(screen.getByRole("button", { name: "Generate" }).hasAttribute("disabled")).toBe(true);
+  fireEvent.click(selectAll);
   generate();
   await screen.findByText("10 of 10 auditions ready");
   expect(requestMock).toHaveBeenCalledTimes(10);
