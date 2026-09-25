@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/generate/route";
 import { generateSpeech, TTS_TIMEOUT_MS } from "@/lib/server/tts";
-import { DEFAULT_PERSONA, MAX_SCRIPT_WORDS, MAX_PERSONA, countWords, validateRequest } from "@/lib/contracts";
+import { MAX_SCRIPT_WORDS, MAX_DIRECTION, countWords, validateRequest } from "@/lib/contracts";
+import { buildEffectiveDirection, getVoiceVariant, VOICE_VARIANTS } from "@/lib/voice-profiles";
 import { isValidWav, pcmToWav, MAX_PCM_BYTES } from "@/lib/audio";
 
-const input = { text: "  నమస్కారం! Welcome.\n", persona: "Warm, medium pace.", voice: "Kore" as const };
+const input = { text: "  నమస్కారం! Welcome.\n", direction: "Warm, medium pace.", variantId: "firm-female" as const };
 const pcm = Buffer.from([0, 0, 255, 127, 0, 128, 1, 0]);
 function providerResponse(data = pcm.toString("base64"), mime = "audio/l16") {
   return Response.json({ steps: [{ type: "model_output", content: [{ type: "audio", data, mime_type: mime }] }] });
@@ -16,18 +17,18 @@ beforeEach(() => { vi.stubEnv("GEMINI_API_KEY", "test-key-not-real"); vi.spyOn(c
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("request validation and endpoint", () => {
-  it("preserves script and persona exactly and defaults optional fields", () => {
+  it("preserves script and direction exactly and defaults optional fields", () => {
     expect(validateRequest(input)).toEqual(input);
-    expect(validateRequest({ text: "Hello" })).toEqual({ text: "Hello", persona: "", voice: "Sulafat" });
+    expect(validateRequest({ text: "Hello" })).toEqual({ text: "Hello", direction: "", variantId: "warm-female" });
   });
   it.each([
     ["empty", { ...input, text: " \n " }],
-    ["missing", { persona: "" }],
+    ["missing", { direction: "" }],
     ["oversized", { ...input, text: "word ".repeat(MAX_SCRIPT_WORDS + 1) }],
     ["oversized section", { ...input, text: "a".repeat(801) }],
-    ["invalid voice", { ...input, voice: "unknown" }],
-    ["oversized persona", { ...input, persona: "a".repeat(MAX_PERSONA + 1) }],
-    ["non-string persona", { ...input, persona: 12 }],
+    ["invalid voice", { ...input, variantId: "unknown" }],
+    ["oversized direction", { ...input, direction: "a".repeat(MAX_DIRECTION + 1) }],
+    ["non-string direction", { ...input, direction: 12 }],
     ["array", []], ["null", null],
   ])("rejects %s before contacting Gemini", async (_label, body) => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
@@ -64,8 +65,8 @@ describe("request validation and endpoint", () => {
     const init = fetchMock.mock.calls[0][1];
     const body = JSON.parse(init.body);
     expect(body.input[0].content[0].text).toBe(input.text);
-    expect(body.input[0].content[0].annotations[0].style).toBe(input.persona);
-    expect(body.generation_config.speech_config[0].voice).toBe(input.voice);
+    expect(body.input[0].content[0].annotations[0].style).toBe(buildEffectiveDirection(getVoiceVariant(input.variantId)!.profile, input.direction));
+    expect(body.generation_config.speech_config[0].voice).toBe(getVoiceVariant(input.variantId)!.voice);
     expect(body.response_format).toEqual({ type: "audio", mime_type: "audio/l16", sample_rate: 24000 });
     expect(body.store).toBe(false);
     expect(init.headers["x-goog-api-key"]).toBe("test-key-not-real");
@@ -93,13 +94,23 @@ describe("request validation and endpoint", () => {
 });
 
 describe("provider reliability", () => {
-  it("uses Andhra Telugu direction for blank persona without changing the spoken text", async () => {
+  it.each(VOICE_VARIANTS)("resolves $id to its provider voice and its own baseline", async (variant) => {
+    const fetchMock = vi.fn().mockResolvedValue(providerResponse()); vi.stubGlobal("fetch", fetchMock);
+    const direction = "Use natural Andhra Telugu pronunciation. ".padEnd(MAX_DIRECTION, " ");
+    const response = await POST(request({ text: input.text, direction, variantId: variant.id }));
+    expect(response.status).toBe(200);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.input[0].content[0].text).toBe(input.text);
+    expect(body.input[0].content[0].annotations[0].style).toBe(buildEffectiveDirection(variant.profile, direction));
+    expect(body.generation_config.speech_config[0].voice).toBe(variant.voice);
+  });
+  it("uses the selected profile baseline for blank direction without changing the spoken text", async () => {
     const fetchMock = vi.fn().mockResolvedValue(providerResponse());
     vi.stubGlobal("fetch", fetchMock);
-    await generateSpeech({ ...input, persona: "  " });
+    await generateSpeech({ ...input, direction: "  " });
     const content = JSON.parse(fetchMock.mock.calls[0][1].body).input[0].content[0];
     expect(content.text).toBe(input.text);
-    expect(content.annotations[0].style).toBe(DEFAULT_PERSONA);
+    expect(content.annotations[0].style).toBe(buildEffectiveDirection(getVoiceVariant(input.variantId)!.profile, ""));
   });
   it("aborts a stalled provider after the deadline", async () => {
     vi.useFakeTimers();

@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { requestVoiceover, SECTION_TIMEOUT_MS } from "@/lib/api-client";
 import { pcmToWav, MAX_PCM_BYTES } from "@/lib/audio";
 import { fitsSection, splitScript } from "@/lib/script";
-const input = { text: "Hello", persona: "", voice: "Kore" as const };
+const input = { text: "Hello", direction: "", variantId: "firm-female" as const };
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 it("accepts a valid WAV as a playable Blob", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(pcmToWav(new Uint8Array(480)), { headers: { "Content-Type": "audio/wav" } })));
@@ -43,7 +43,7 @@ it("generates all 3,000 words in order with consistent direction and reports pro
   const blob = await requestVoiceover({ ...input, text }, new AbortController().signal, progress);
   expect(sent.length).toBeGreaterThan(1);
   expect(sent.map((request) => request.text).join("")).toBe(text);
-  expect(sent.every((request) => request.voice === input.voice && request.persona === input.persona && fitsSection(request.text))).toBe(true);
+  expect(sent.every((request) => request.variantId === input.variantId && request.direction === input.direction && fitsSection(request.text))).toBe(true);
   expect(progress).toHaveBeenLastCalledWith({ completed: sent.length, total: sent.length });
   const wav = new Uint8Array(await blob.arrayBuffer());
   const view = new DataView(wav.buffer);

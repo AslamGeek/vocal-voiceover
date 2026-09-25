@@ -3,216 +3,227 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import VoiceoverStudio from "@/components/voiceover-studio";
 import { requestVoiceover } from "@/lib/api-client";
-import { DELIVERY_PRESETS } from "@/lib/presets";
+import { VOICE_PROFILES, VOICE_VARIANTS, getVoiceVariant, variantLabel, type VoiceVariantId } from "@/lib/voice-profiles";
 vi.mock("@/lib/api-client", () => ({ requestVoiceover: vi.fn() }));
 const requestMock = vi.mocked(requestVoiceover);
 beforeEach(() => {
   requestMock.mockReset();
-  URL.createObjectURL = vi.fn().mockReturnValue("blob:voice-1");
+  let id = 0;
+  URL.createObjectURL = vi.fn(() => `blob:voice-${++id}`);
   URL.revokeObjectURL = vi.fn();
+  vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
 });
 afterEach(cleanup);
-
-it("defaults to single voice and requires at least two comparison voices", () => {
-  render(<VoiceoverStudio />); fillScript();
-  expect((screen.getByRole("radio", { name: "Single voice" }) as HTMLInputElement).checked).toBe(true);
-  fireEvent.click(screen.getByRole("radio", { name: "Compare voices" }));
-  fireEvent.click(screen.getByRole("checkbox", { name: /Kore/ }));
-  fireEvent.click(screen.getByRole("checkbox", { name: /Puck/ }));
-  expect(screen.getByRole("button", { name: "Generate auditions" }).hasAttribute("disabled")).toBe(true);
-  fireEvent.submit(screen.getByRole("button", { name: "Generate auditions" }).closest("form")!);
-  expect(requestMock).not.toHaveBeenCalled();
-  expect(screen.getByRole("alert").textContent).toContain("at least two");
-});
-it("compares the identical input, prevents duplicate batches, and retains partial success", async () => {
-  const pending: Record<string, { resolve: (blob: Blob) => void; reject: (error: Error) => void }> = {};
-  requestMock.mockImplementation((input) => new Promise((resolve, reject) => { pending[input.voice] = { resolve, reject }; }));
-  render(<VoiceoverStudio />); fillScript();
-  fireEvent.change(screen.getByLabelText(/Delivery direction/), { target: { value: "Warm and relaxed." } });
-  fireEvent.click(screen.getByRole("radio", { name: "Compare voices" }));
-  const form = screen.getByRole("button", { name: "Generate auditions" }).closest("form")!;
-  fireEvent.submit(form); fireEvent.submit(form);
-  expect(requestMock).toHaveBeenCalledTimes(3);
-  expect(requestMock.mock.calls.map(([input]) => input)).toEqual([
-    { text: "Hello, world.", persona: "Warm and relaxed.", voice: "Kore" },
-    { text: "Hello, world.", persona: "Warm and relaxed.", voice: "Puck" },
-    { text: "Hello, world.", persona: "Warm and relaxed.", voice: "Sulafat" },
-  ]);
-  await act(async () => { pending.Kore.resolve(new Blob(["wav"])); pending.Puck.reject(new Error("Service is busy.")); });
-  expect(screen.getByRole("link", { name: "Download Kore WAV" }).getAttribute("download")).toMatch(/^Hello-world_\d{4}-\d{2}-\d{2}_\d{6}_Kore\.wav$/);
-  expect(screen.getByRole("alert").textContent).toContain("Puck: Service is busy.");
-  expect(screen.getByRole("button", { name: "Generating auditions…" }).hasAttribute("disabled")).toBe(true);
-  await act(async () => pending.Sulafat.resolve(new Blob(["wav"])));
-  expect(screen.getByRole("status").textContent).toBe("2 of 3 auditions ready");
-  expect(screen.getByRole("button", { name: "Generate auditions" }).hasAttribute("disabled")).toBe(false);
-});
-it("generates only selected comparison voices and pauses the other player", async () => {
-  requestMock.mockResolvedValue(new Blob(["wav"]));
-  const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
-  render(<VoiceoverStudio />); fillScript();
-  fireEvent.click(screen.getByRole("radio", { name: "Compare voices" }));
-  fireEvent.click(screen.getByRole("checkbox", { name: /Puck/ }));
-  fireEvent.click(screen.getByRole("button", { name: "Generate auditions" }));
-  await screen.findByRole("link", { name: "Download Sulafat WAV" });
-  expect(requestMock.mock.calls.map(([input]) => input.voice)).toEqual(["Kore", "Sulafat"]);
-  const kore = screen.getByLabelText("Kore voiceover");
-  const sulafat = screen.getByLabelText("Sulafat voiceover");
-  fireEvent.play(kore);
-  expect(pause).toHaveBeenCalledTimes(1);
-  expect(pause.mock.instances[0]).toBe(sulafat);
-  fireEvent.error(kore);
-  expect(screen.getByRole("alert").textContent).toContain("Kore: This audio");
-});
-it("releases all comparison URLs when replaced or unmounted", async () => {
-  requestMock.mockResolvedValue(new Blob(["wav"]));
-  let id = 0;
-  vi.mocked(URL.createObjectURL).mockImplementation(() => "blob:compare-" + ++id);
-  const view = render(<VoiceoverStudio />); fillScript();
-  fireEvent.click(screen.getByRole("radio", { name: "Compare voices" }));
-  fireEvent.click(screen.getByRole("button", { name: "Generate auditions" }));
-  await screen.findByRole("link", { name: "Download Sulafat WAV" });
-  fireEvent.click(screen.getByRole("button", { name: "Generate auditions" }));
-  await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(6));
-  expect(URL.revokeObjectURL).toHaveBeenCalledTimes(3);
-  view.unmount();
-  expect(URL.revokeObjectURL).toHaveBeenCalledTimes(6);
-});
-it("cancels every comparison request on unmount and ignores late results", async () => {
-  const resolves: ((blob: Blob) => void)[] = [];
-  requestMock.mockImplementation(() => new Promise((resolve) => { resolves.push(resolve); }));
-  const view = render(<VoiceoverStudio />); fillScript();
-  fireEvent.click(screen.getByRole("radio", { name: "Compare voices" }));
-  fireEvent.click(screen.getByRole("button", { name: "Generate auditions" }));
-  const signals = requestMock.mock.calls.map(([, signal]) => signal);
-  view.unmount();
-  expect(signals).toHaveLength(3);
-  expect(signals.every((signal) => signal.aborted)).toBe(true);
-  await act(async () => resolves.forEach((resolve) => resolve(new Blob(["wav"]))));
-  expect(URL.createObjectURL).not.toHaveBeenCalled();
-});
-it("returns to single generation after a comparison", async () => {
-  requestMock.mockResolvedValue(new Blob(["wav"]));
-  render(<VoiceoverStudio />); fillScript();
-  fireEvent.click(screen.getByRole("radio", { name: "Compare voices" }));
-  fireEvent.click(screen.getByRole("button", { name: "Generate auditions" }));
-  await screen.findByRole("link", { name: "Download Sulafat WAV" });
-  fireEvent.click(screen.getByRole("radio", { name: "Single voice" }));
-  fireEvent.click(screen.getByRole("button", { name: "Generate voice" }));
-  await screen.findByLabelText("Generated voiceover");
-  expect(requestMock).toHaveBeenCalledTimes(4);
-  expect(requestMock.mock.calls[3][0].voice).toBe("Sulafat");
-});
-it("cancels pending comparison voices while retaining completed downloads", async () => {
-  requestMock.mockImplementation((input, signal, progress) => {
-    if (input.voice === "Kore") return Promise.resolve(new Blob(["wav"]));
-    progress?.({ completed: 2, total: 30 });
-    return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError"))));
-  });
-  render(<VoiceoverStudio />); fillScript();
-  fireEvent.click(screen.getByRole("radio", { name: "Compare voices" }));
-  fireEvent.click(screen.getByRole("button", { name: "Generate auditions" }));
-  await screen.findByRole("link", { name: "Download Kore WAV" });
-  expect(screen.getAllByText("2 of 30 sections complete")).toHaveLength(2);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  await waitFor(() => expect(screen.getByRole("button", { name: "Generate auditions" }).hasAttribute("disabled")).toBe(false));
-  expect(screen.getByRole("link", { name: "Download Kore WAV" })).toBeTruthy();
-  expect(screen.getAllByRole("alert").every((element) => element.textContent?.includes("Generation cancelled."))).toBe(true);
-});
-function fillScript() {
-  fireEvent.change(screen.getByLabelText(/Your script/), { target: { value: "Hello, world." } });
+const label = (id: VoiceVariantId) => variantLabel(getVoiceVariant(id)!);
+const checkbox = (id: VoiceVariantId) => screen.getByRole("checkbox", { name: label(id) }) as HTMLInputElement;
+const download = (id: VoiceVariantId) => screen.getByRole("link", { name: `Download ${label(id)} WAV` });
+const previewButton = (id: VoiceVariantId) => screen.getByRole("button", { name: `Preview ${label(id)}` });
+const resultPlayer = (id: VoiceVariantId) => screen.getByLabelText(`${label(id)} voiceover`);
+const fill = (text = "  నమస్కారం! Hello, world.\n", direction = "Conversational Andhra Telugu, medium pace.") => {
+  fireEvent.change(screen.getByLabelText(/01 Transcript/), { target: { value: text } });
+  fireEvent.change(screen.getByLabelText(/Persona & Direction/), { target: { value: direction } });
+};
+const generate = () => fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+function pendingRequests() {
+  const pending = new Map<string, { resolve: (blob: Blob) => void; reject: (error: Error) => void }>();
+  requestMock.mockImplementation((input) => new Promise((resolve, reject) => pending.set(input.variantId, { resolve, reject })));
+  return pending;
 }
-it("counts words, permits 3,000, and preserves over-limit text for editing", () => {
+
+it("shows exactly five profiles with ten independent variants and a warm female default", () => {
   render(<VoiceoverStudio />);
-  const field = screen.getByLabelText(/Your script/) as HTMLTextAreaElement;
-  const text = "పదం ".repeat(3000);
-  fireEvent.change(field, { target: { value: text } });
-  expect(screen.getByText("3,000 / 3,000 words")).toBeTruthy();
-  expect(field.hasAttribute("maxlength")).toBe(false);
-  expect(screen.getByRole("button", { name: "Generate voice" }).hasAttribute("disabled")).toBe(false);
-  fireEvent.change(field, { target: { value: text + "extra" } });
-  expect(field.value).toBe(text + "extra");
-  expect(screen.getByRole("alert").textContent).toContain("3,000 words");
-  expect(screen.getByRole("button", { name: "Generate voice" }).hasAttribute("disabled")).toBe(true);
+  expect(VOICE_PROFILES).toHaveLength(5);
+  expect(screen.getAllByRole("group")).toHaveLength(5);
+  expect(screen.getAllByRole("checkbox")).toHaveLength(10);
+  expect(screen.getAllByRole("button", { name: /^Preview / })).toHaveLength(10);
+  expect(checkbox("warm-female").checked).toBe(true);
+  expect(screen.getAllByRole("checkbox").filter((element) => (element as HTMLInputElement).checked)).toHaveLength(1);
+  expect(screen.queryByRole("combobox")).toBeNull();
+  expect(screen.queryByRole("radio")).toBeNull();
+  expect((screen.getByLabelText(/Persona & Direction/) as HTMLTextAreaElement).value).toBe("");
+  fill(); fireEvent.click(checkbox("warm-female"));
+  expect(screen.getByRole("button", { name: "Generate" }).hasAttribute("disabled")).toBe(true);
+  fireEvent.submit(screen.getByRole("button", { name: "Generate" }).closest("form")!);
+  expect(screen.getByRole("alert").textContent).toContain("at least one");
+  expect(requestMock).not.toHaveBeenCalled();
 });
-it("shows section progress and lets users cancel a long generation", async () => {
-  requestMock.mockImplementation((_input, signal, progress) => new Promise((_resolve, reject) => {
-    progress?.({ completed: 1, total: 30 });
-    signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
-  }));
-  render(<VoiceoverStudio />); fillScript();
-  fireEvent.click(screen.getByRole("button", { name: "Generate voice" }));
-  expect(screen.getByRole("status").textContent).toContain("1 of 30 sections complete");
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  await waitFor(() => expect(screen.getByRole("button", { name: "Generate voice" }).hasAttribute("disabled")).toBe(false));
-  expect(requestMock.mock.calls[0][1].aborted).toBe(true);
-  expect(screen.queryByRole("alert")).toBeNull();
-});
-it("starts with the warm voice and editable Andhra Telugu delivery direction", () => {
-  render(<VoiceoverStudio />);
-  expect((screen.getByLabelText("Purpose") as HTMLSelectElement).value).toBe("telugu-ads");
-  expect((screen.getByLabelText("Voice") as HTMLSelectElement).value).toBe("Sulafat");
-  expect((screen.getByLabelText(/Delivery direction/) as HTMLTextAreaElement).value).toContain("native Andhra Telugu accent");
-  expect((screen.getByLabelText(/Your script/) as HTMLTextAreaElement).value).toBe("");
-});
-it.each([false, true])("uses the selected English preset when direction is blank (compare: %s)", async (compare) => {
-  requestMock.mockResolvedValue(new Blob(["wav"]));
-  render(<VoiceoverStudio />); fillScript();
-  fireEvent.change(screen.getByLabelText("Voice"), { target: { value: "Puck" } });
-  fireEvent.change(screen.getByLabelText(/Delivery direction/), { target: { value: "Custom direction" } });
-  fireEvent.change(screen.getByLabelText("Purpose"), { target: { value: "english-shorts" } });
-  const preset = DELIVERY_PRESETS.find((item) => item.id === "english-shorts")!;
-  expect((screen.getByLabelText(/Delivery direction/) as HTMLTextAreaElement).value).toBe(preset.direction);
-  expect((screen.getByLabelText("Voice") as HTMLSelectElement).value).toBe("Puck");
-  expect((screen.getByLabelText(/Your script/) as HTMLTextAreaElement).value).toBe("Hello, world.");
-  fireEvent.change(screen.getByLabelText(/Delivery direction/), { target: { value: "  " } });
-  if (compare) fireEvent.click(screen.getByRole("radio", { name: "Compare voices" }));
-  fireEvent.click(screen.getByRole("button", { name: compare ? "Generate auditions" : "Generate voice" }));
-  await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(compare ? 3 : 1));
-  expect(requestMock.mock.calls.every(([input]) => input.text === "Hello, world." && input.persona === preset.direction)).toBe(true);
-});
-it("prevents duplicate submissions while generating and exposes the result", async () => {
-  let resolve!: (blob: Blob) => void;
-  requestMock.mockReturnValue(new Promise((done) => { resolve = done; }));
-  render(<VoiceoverStudio />); fillScript();
-  const button = screen.getByRole("button", { name: "Generate voice" });
-  const form = button.closest("form")!;
+
+it("uses one result path for one voice, locks duplicate submissions, and preserves filenames after edits", async () => {
+  const pending = pendingRequests(); render(<VoiceoverStudio />); fill("Hello, world.", "");
+  const form = screen.getByRole("button", { name: "Generate" }).closest("form")!;
   fireEvent.submit(form); fireEvent.submit(form);
   expect(requestMock).toHaveBeenCalledTimes(1);
-  expect(screen.getByRole("button", { name: "Generating voice…" }).hasAttribute("disabled")).toBe(true);
-  await act(async () => resolve(new Blob(["wav"], { type: "audio/wav" })));
-  expect(screen.getByLabelText("Generated voiceover").getAttribute("src")).toBe("blob:voice-1");
-  const downloadName = screen.getByRole("link", { name: /Download WAV/ }).getAttribute("download");
-  expect(downloadName).toMatch(/^Hello-world_\d{4}-\d{2}-\d{2}_\d{6}_Sulafat\.wav$/);
-  fireEvent.change(screen.getByLabelText(/Your script/), { target: { value: "A different script" } });
-  fireEvent.change(screen.getByLabelText("Voice"), { target: { value: "Puck" } });
-  expect(screen.getByRole("link", { name: /Download WAV/ }).getAttribute("download")).toBe(downloadName);
-  expect(screen.getByRole("button", { name: "Generate voice" }).hasAttribute("disabled")).toBe(false);
+  expect(requestMock.mock.calls[0][0]).toEqual({ text: "Hello, world.", direction: "", variantId: "warm-female" });
+  expect(checkbox("warm-male").closest("fieldset")?.disabled).toBe(true);
+  await act(async () => pending.get("warm-female")!.resolve(new Blob(["wav"])));
+  expect(resultPlayer("warm-female").getAttribute("src")).toBe("blob:voice-1");
+  const filename = download("warm-female").getAttribute("download");
+  expect(filename).toMatch(/^Hello-world_\d{4}-\d{2}-\d{2}_\d{6}_Sulafat\.wav$/);
+  fill("New transcript", "Different direction"); fireEvent.click(checkbox("firm-male"));
+  expect(download("warm-female").getAttribute("download")).toBe(filename);
 });
-it("releases replaced and unmounted audio URLs", async () => {
-  requestMock.mockResolvedValue(new Blob(["wav"]));
-  vi.mocked(URL.createObjectURL).mockReturnValueOnce("blob:first").mockReturnValueOnce("blob:second");
-  const view = render(<VoiceoverStudio />); fillScript();
-  fireEvent.click(screen.getByRole("button", { name: "Generate voice" }));
-  await screen.findByRole("link", { name: /Download WAV/ });
-  fireEvent.click(screen.getByRole("button", { name: "Generate voice" }));
-  await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:first"));
+
+it("generates four voices including both genders with at most two requests and preserves partial success", async () => {
+  const pending = pendingRequests(); render(<VoiceoverStudio />); fill();
+  for (const id of ["warm-male", "firm-female", "premium-male"] as const) fireEvent.click(checkbox(id));
+  generate();
+  expect(requestMock.mock.calls.map(([input]) => input.variantId)).toEqual(["warm-female", "warm-male"]);
+  expect(screen.getAllByText("Queued")).toHaveLength(2);
+  await act(async () => pending.get("warm-female")!.resolve(new Blob(["wav"])));
+  expect(requestMock.mock.calls[2][0].variantId).toBe("firm-female");
+  await act(async () => pending.get("warm-male")!.reject(new Error("Service is busy.")));
+  expect(requestMock.mock.calls[3][0].variantId).toBe("premium-male");
+  expect(download("warm-female")).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toBe("Service is busy.");
+  await act(async () => {
+    pending.get("firm-female")!.resolve(new Blob(["wav"]));
+    pending.get("premium-male")!.resolve(new Blob(["wav"]));
+  });
+  expect(screen.getByText("3 of 4 auditions ready")).toBeTruthy();
+  for (const [input] of requestMock.mock.calls) expect(input).toMatchObject({ text: "  నమస్కారం! Hello, world.\n", direction: "Conversational Andhra Telugu, medium pace." });
+  expect(screen.getAllByRole("link", { name: /^Download / })).toHaveLength(3);
+});
+
+it("allows all ten variants and continues the bounded queue", async () => {
+  requestMock.mockResolvedValue(new Blob(["wav"])); render(<VoiceoverStudio />); fill();
+  VOICE_VARIANTS.slice(1).forEach((variant) => fireEvent.click(checkbox(variant.id)));
+  generate();
+  await screen.findByText("10 of 10 auditions ready");
+  expect(requestMock).toHaveBeenCalledTimes(10);
+  expect(screen.getAllByRole("link", { name: /^Download / })).toHaveLength(10);
+});
+
+it("cancels running and queued voices, preserves successes, and ignores late completions", async () => {
+  const pending = pendingRequests(); render(<VoiceoverStudio />); fill();
+  for (const id of ["warm-male", "firm-female", "firm-male"] as const) fireEvent.click(checkbox(id));
+  generate();
+  await act(async () => pending.get("warm-female")!.resolve(new Blob(["wav"])));
+  const cancelled = requestMock.mock.calls.map(([, signal]) => signal);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(cancelled.every((signal) => signal.aborted)).toBe(true);
+  expect(screen.getAllByText("Cancelled")).toHaveLength(3);
+  expect(download("warm-female")).toBeTruthy();
+  await act(async () => {
+    pending.get("warm-male")!.resolve(new Blob(["late"]));
+    pending.get("firm-female")!.resolve(new Blob(["late"]));
+  });
+  expect(requestMock).toHaveBeenCalledTimes(3);
+  expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+  requestMock.mockResolvedValue(new Blob(["new"])); generate();
+  await screen.findByText("4 of 4 auditions ready");
+});
+
+it("shows long-script progress and aborts on unmount without storing late audio", async () => {
+  let resolve!: (blob: Blob) => void;
+  requestMock.mockImplementation((_input, _signal, progress) => {
+    progress?.({ completed: 1, total: 30 });
+    return new Promise((done) => { resolve = done; });
+  });
+  const view = render(<VoiceoverStudio />); fill(); generate();
+  expect(screen.getByText("1 of 30 sections complete")).toBeTruthy();
   view.unmount();
-  expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:second");
+  expect(requestMock.mock.calls[0][1].aborted).toBe(true);
+  await act(async () => resolve(new Blob(["late"])));
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
 });
-it("shows a recoverable accessible error and keeps a previous result", async () => {
-  requestMock.mockResolvedValueOnce(new Blob(["wav"])).mockRejectedValueOnce(new Error("The voice service is busy."));
-  render(<VoiceoverStudio />); fillScript();
-  fireEvent.click(screen.getByRole("button", { name: "Generate voice" }));
-  await screen.findByRole("link", { name: /Download WAV/ });
-  fireEvent.click(screen.getByRole("button", { name: "Generate voice" }));
-  expect((await screen.findByRole("alert")).textContent).toBe("The voice service is busy.");
-  expect(screen.getByRole("link", { name: /Download WAV/ })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Generate voice" }).hasAttribute("disabled")).toBe(false);
+
+it("retains transcript/direction limits and clears only the transcript with keyboard focus", () => {
+  render(<VoiceoverStudio />); fill("పదం ".repeat(3000), "Keep this direction.");
+  const field = screen.getByLabelText(/01 Transcript/) as HTMLTextAreaElement;
+  expect(screen.getByText("3,000 / 3,000 words")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Generate" }).hasAttribute("disabled")).toBe(false);
+  fireEvent.change(field, { target: { value: field.value + "extra" } });
+  expect(screen.getByRole("alert").textContent).toContain("3,000");
+  expect(screen.getByRole("button", { name: "Generate" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByLabelText(/Persona & Direction/).getAttribute("maxlength")).toBe("1000");
+  fireEvent.click(screen.getByRole("button", { name: "Clear transcript" }));
+  expect(field.value).toBe(""); expect(document.activeElement).toBe(field);
+  expect((screen.getByLabelText(/Persona & Direction/) as HTMLTextAreaElement).value).toBe("Keep this direction.");
+  expect(checkbox("warm-female").checked).toBe(true);
 });
-it("aborts an in-flight request on unmount", () => {
-  requestMock.mockReturnValue(new Promise(() => {}));
-  const view = render(<VoiceoverStudio />); fillScript();
-  fireEvent.click(screen.getByRole("button", { name: "Generate voice" }));
-  const signal = requestMock.mock.calls[0][1];
-  view.unmount(); expect(signal.aborted).toBe(true);
+
+it.each(VOICE_VARIANTS)("lazily previews $id, caches it, and leaves the editor and results untouched", async (variant) => {
+  requestMock.mockResolvedValue(new Blob(["preview"])); render(<VoiceoverStudio />); fill();
+  const before = screen.getAllByRole("checkbox").map((element) => (element as HTMLInputElement).checked);
+  fireEvent.click(previewButton(variant.id));
+  await screen.findByLabelText(`${label(variant.id)} preview`);
+  expect(requestMock.mock.calls[0][0]).toEqual({ text: variant.profile.previewScript, direction: "", variantId: variant.id });
+  expect((screen.getByLabelText(/01 Transcript/) as HTMLTextAreaElement).value).toBe("  నమస్కారం! Hello, world.\n");
+  expect((screen.getByLabelText(/Persona & Direction/) as HTMLTextAreaElement).value).toBe("Conversational Andhra Telugu, medium pace.");
+  expect(screen.getAllByRole("checkbox").map((element) => (element as HTMLInputElement).checked)).toEqual(before);
+  expect(screen.queryByRole("link", { name: /^Download / })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Close preview" }));
+  fireEvent.click(previewButton(variant.id));
+  await screen.findByLabelText(`${label(variant.id)} preview`);
+  expect(requestMock).toHaveBeenCalledTimes(1);
+});
+
+it("deduplicates previews and cancels a superseded preview without stale results", async () => {
+  const pending = pendingRequests(); render(<VoiceoverStudio />);
+  fireEvent.click(previewButton("warm-male")); fireEvent.click(previewButton("warm-male"));
+  expect(requestMock).toHaveBeenCalledTimes(1);
+  fireEvent.click(previewButton("firm-female"));
+  expect(requestMock.mock.calls[0][1].aborted).toBe(true);
+  await act(async () => pending.get("warm-male")!.resolve(new Blob(["stale"])));
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
+  await act(async () => pending.get("firm-female")!.resolve(new Blob(["preview"])));
+  expect(screen.getByLabelText(`${label("firm-female")} preview`)).toBeTruthy();
+});
+
+it("cancels pending preview work when generation starts or the studio unmounts", async () => {
+  const pending = pendingRequests(); const view = render(<VoiceoverStudio />); fill();
+  fireEvent.click(previewButton("premium-male")); generate();
+  expect(requestMock.mock.calls[0][1].aborted).toBe(true);
+  expect(screen.queryByLabelText("Voice preview")).toBeNull();
+  view.unmount();
+  expect(requestMock.mock.calls[1][1].aborted).toBe(true);
+  await act(async () => {
+    pending.get("premium-male")!.resolve(new Blob(["stale"]));
+    pending.get("warm-female")!.resolve(new Blob(["stale"]));
+  });
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
+});
+
+it("recovers from preview generation/playback errors without creating an audition", async () => {
+  requestMock.mockRejectedValueOnce(new Error("Service is busy.")).mockResolvedValue(new Blob(["preview"]));
+  render(<VoiceoverStudio />);
+  fireEvent.click(previewButton("calm-female"));
+  expect((await screen.findByRole("alert")).textContent).toBe("Service is busy.");
+  fireEvent.click(previewButton("calm-female"));
+  fireEvent.error(await screen.findByLabelText(`${label("calm-female")} preview`));
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:voice-1");
+  expect(screen.getByRole("alert").textContent).toContain("couldn’t be played");
+  fireEvent.click(previewButton("calm-female"));
+  await screen.findByLabelText(`${label("calm-female")} preview`);
+  expect(requestMock).toHaveBeenCalledTimes(3);
+  expect(screen.queryByRole("link", { name: /^Download / })).toBeNull();
+});
+
+it("pauses other preview/result audio in both directions and keeps failed playback downloadable", async () => {
+  requestMock.mockResolvedValue(new Blob(["wav"])); render(<VoiceoverStudio />); fill();
+  fireEvent.click(checkbox("firm-male")); generate(); await screen.findByText("2 of 2 auditions ready");
+  fireEvent.click(previewButton("calm-male"));
+  const preview = await screen.findByLabelText(`${label("calm-male")} preview`);
+  const pause = vi.mocked(HTMLMediaElement.prototype.pause); pause.mockClear();
+  fireEvent.play(preview);
+  expect(pause.mock.instances).toContain(resultPlayer("warm-female"));
+  expect(pause.mock.instances).toContain(resultPlayer("firm-male"));
+  pause.mockClear(); fireEvent.play(resultPlayer("warm-female"));
+  expect(pause.mock.instances).toContain(preview);
+  expect(pause.mock.instances).toContain(resultPlayer("firm-male"));
+  fireEvent.error(resultPlayer("warm-female"));
+  expect(screen.getByRole("alert").textContent).toContain("couldn’t be played");
+  expect(download("warm-female")).toBeTruthy();
+});
+
+it("releases replaced results and all session preview URLs on unmount", async () => {
+  requestMock.mockResolvedValue(new Blob(["wav"])); const view = render(<VoiceoverStudio />); fill();
+  fireEvent.click(previewButton("warm-female")); await screen.findByLabelText(`${label("warm-female")} preview`);
+  fireEvent.click(previewButton("warm-male")); await screen.findByLabelText(`${label("warm-male")} preview`);
+  generate(); await screen.findByText("1 of 1 auditions ready");
+  expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  generate(); await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(4));
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:voice-3");
+  view.unmount();
+  expect(new Set(vi.mocked(URL.revokeObjectURL).mock.calls.map(([url]) => url))).toEqual(new Set(["blob:voice-1", "blob:voice-2", "blob:voice-3", "blob:voice-4"]));
 });

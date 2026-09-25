@@ -1,4 +1,4 @@
-import type { Voice } from "./contracts";
+import type { Voice } from "./voice-profiles";
 
 export function voiceoverFilename(text: string, voice: Voice, generatedAt = new Date()): string {
   const words = text.normalize("NFC").replace(/[^\p{L}\p{M}\p{N}]+/gu, " ").trim().split(/\s+/u).slice(0, 6).join("-");

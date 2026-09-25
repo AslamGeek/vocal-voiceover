@@ -4,11 +4,27 @@ A small voiceover app: enter a script and delivery direction, generate speech, l
 
 Downloads use the first few script words, local generation date and time, and voice name: `Hello-world_2026-09-25_153000_Sulafat.wav`. Telugu text is preserved and filename-unsafe punctuation is removed. The name stays attached to its generated audio when the script or selected voice is edited later.
 
-Single voice is the default. Switch to **Compare voices** to select two or three of the existing voices and generate auditions together. Each gets the identical script and delivery direction, independent progress, a player, and a voice-named WAV download. Successful auditions remain available if another fails. Playing one audition pauses the others. Each voice uses one provider call per script section; there are no automatic retries.
+## Voice Profiles workflow
 
-The default purpose is **Telugu ads**, with Sulafat (warm) and conversational Andhra Telugu delivery. The **Purpose** selector also offers English ads, English and Telugu Reels / Shorts, and English and Telugu narration / explainers. Ads emphasize offers and calls to action; shorts use a stronger opening and brisk conversational pacing; narration uses a measured explanatory style. Choosing a purpose fills the editable delivery direction without changing the script or voice selection. Clearing the direction uses the selected preset in both single and comparison modes. Direct API calls without direction retain the Telugu-ad default.
+**Transcript → Voice Profiles → Persona & Direction → Generate → Audition Results**
 
-Use an English script for English presets and Telugu script for Telugu presets. The spoken script is never rewritten or translated by the app. Presets guide the delivery; pronunciation, accent, and pacing still need a listening check with real generated audio.
+Select one or more Male/Female variants, including both variants of a profile or all ten. The default is **Warm & Inviting → Female (Sulafat)**. There is no separate comparison mode or purpose selector.
+
+| Profile | Female | Male |
+| --- | --- | --- |
+| Warm & Inviting | Sulafat | Achird |
+| Firm & Clear | Kore | Orus |
+| Upbeat & Expressive | Laomedeia | Puck |
+| Calm & Reassuring | Achernar | Schedar |
+| Premium & Polished | Gacrux | Algieba |
+
+All profile definitions, variants, sample scripts, and direction composition live in **lib/voice-profiles.ts**. Voice names and gender presentation follow [Gemini's voice catalog](https://docs.cloud.google.com/text-to-speech/docs/gemini-tts); the personality mapping is an app configuration based on [Google's voice descriptions](https://ai.google.dev/gemini-api/docs/speech-generation#prebuilt-voices).
+
+Persona & Direction is one optional shared refinement, limited to 1,000 characters. The server constructs each voice's effective direction as its own profile baseline, the user's refinement, then a transcript-fidelity instruction. Leaving it empty retains that profile's baseline. The profile baseline does not force a language or a business-ad purpose. For example, enter “Natural Andhra Telugu, conversational pace, emphasize the offer” or “Conversational English for a short video, crisp pauses.” The app does not rewrite or translate the transcript.
+
+Every variant has a **Preview** button. Its first use generates the profile's short sample with that profile's baseline, using the existing TTS endpoint. Subsequent previews reuse an in-memory session cache; refreshing or leaving the page releases it. Previews never change the transcript, direction, selections, or results. Only one preview request runs at a time; selecting another cancels the pending one. Starting an audition cancels pending preview work and disables previews until generation ends. If browser autoplay is blocked, press Play in the visible preview player. Playing any preview or audition pauses the other audio players.
+
+One unified queue generates up to two voices concurrently, with sequential sections within each voice. Each voice receives the exact same transcript and shared refinement; its baseline and provider voice come from its profile. Results show the profile, gender, provider voice, queue/progress status, player, individual error, and download. Failed voices do not remove successful outputs. Cancel stops active requests and queued work while retaining completed downloads. Starting a new batch replaces previous audition results. Each voice uses one provider call per section; previews also consume a provider call on first use. There are no automatic retries.
 
 ## Local development
 
@@ -55,19 +71,23 @@ This app deliberately has no user accounts. For a personal deployment, use Verce
 ## Design and boundaries
 
 - Next.js App Router + React + TypeScript; only three runtime dependencies.
-- `components/voiceover-studio.tsx`: local UI state, duplicate-submit lock, cancellation, audio URLs and playback.
+- `components/voiceover-studio.tsx`: transcript, variant selections, direction, profile cards, and shared playback coordination.
+- `components/use-auditions.ts`: bounded queue, duplicate-submit lock, cancellation, progress, per-voice errors and URL cleanup.
+- `components/use-voice-previews.ts`: isolated lazy previews, session cache, aborts and URL cleanup.
+- `components/audition-results.tsx`: one result UI for all selection sizes.
+- `lib/voice-profiles.ts`: the five profiles, ten variants, metadata and effective-direction helper.
 - `lib/api-client.ts`: binary API client, safe error mapping and WAV verification.
-- `lib/contracts.ts`: shared limits, three voices and runtime request validation.
+- `lib/contracts.ts`: shared transcript/direction limits and runtime variant validation.
 - `app/api/generate/route.ts`: bounded JSON input, safe errors, no-store binary WAV output.
 - `lib/server/tts.ts`: isolated Gemini REST integration with a 90-second deadline, disconnect propagation, bounded responses and no automatic retries.
 - `lib/audio.ts`: deterministic 24 kHz / mono / 16-bit little-endian PCM to WAV conversion and format validation.
 
-The integration uses `gemini-3.8-flash-tts` via the Interactions API. The exact submitted script is sent as text; persona is separate `speech_metadata.style`. There is no rewriting step. No audio or script is stored by the app, and provider interaction storage is disabled. This does not override the provider's own data policies.
+The integration uses `gemini-3.8-flash-tts` via the Interactions API. The exact submitted transcript is sent as text; composed profile/persona direction is separate `speech_metadata.style`. There is no rewriting step. No audio or script is stored by the app, and provider interaction storage is disabled. This does not override the provider's own data policies.
 
-Scripts accept up to 3,000 whitespace-separated words, including Telugu. Over-limit pastes remain editable; generation is disabled until shortened. Delivery instructions retain a separate 1,000-character limit. Long scripts are split at sentence boundaries where possible, then whitespace or Unicode graphemes, into sections of at most 100 words and 800 UTF-16 code units. Text is not rewritten. The API accepts one section per request with a 16 KB body limit and a 4,000,000-byte PCM response cap (about 83 seconds), below Vercel's response limit.
+Scripts accept up to 3,000 whitespace-separated words, including Telugu. Over-limit pastes remain editable; generation is disabled until shortened. Delivery instructions retain a separate 1,000-character limit. Long scripts are split at sentence boundaries where possible, then whitespace or Unicode graphemes, into sections of at most 100 words and 800 UTF-16 code units. Text is not rewritten. The API accepts one section per request as JSON with text, direction, and variantId (for example warm-female) with a 16 KB body limit and a 4,000,000-byte PCM response cap (about 83 seconds), below Vercel's response limit.
 
-The browser generates sections sequentially per voice, validates each WAV, and joins the PCM frames under one WAV header for playback and download. The combined download can exceed the per-request cap without passing through Vercel again. Each section has its own timeout. Keep the page open; progress and cancellation are available in both modes. A failed section fails that voiceover instead of offering a truncated download. Longer scripts require more API calls and time, and delivery may vary slightly between sections. Provider quotas and output limits still apply; unusually slow sections may exceed the audio cap. Live long-form quality requires listening checks.
+The browser generates sections sequentially per voice, validates each WAV, and joins the PCM frames under one WAV header for playback and download. The combined download can exceed the per-request cap without passing through Vercel again. Each section has its own timeout. Keep the page open; per-voice progress and cancellation are available for every batch. A failed section fails that voiceover instead of offering a truncated download. Longer scripts require more API calls and time, and delivery may vary slightly between sections. Provider quotas and output limits still apply; unusually slow sections may exceed the audio cap. Live long-form quality requires listening checks.
 
-Tests verify request validation, script fidelity in the outgoing payload, error mapping, timeouts, cancellation, malformed audio, exact WAV headers, duplicate submission, URL cleanup and frontend recovery. Real synthesis, accent quality and spoken-text fidelity still require a live key and listening checks; no model can be certified by a mocked response.
+Tests verify every variant’s provider mapping and composed direction, transcript fidelity, one-to-ten selections, queue concurrency, partial failure, cancellation, progress, preview caching/isolation, playback coordination, URL cleanup, request limits, timeouts, malformed audio, and WAV joining. Real synthesis, accent quality and spoken-text fidelity still require a live key and listening checks; no model can be certified by a mocked response.
 
 References: [Gemini speech API](https://ai.google.dev/gemini-api/docs/speech-generation), [Vercel limits](https://vercel.com/docs/functions/limitations).

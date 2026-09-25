@@ -1,4 +1,5 @@
-import { AppError, DEFAULT_PERSONA, type GenerationRequest } from "../contracts";
+import { AppError, type GenerationRequest } from "../contracts";
+import { buildEffectiveDirection, getVoiceVariant } from "../voice-profiles";
 import { MAX_PCM_BYTES, pcmToWav } from "../audio";
 
 export const TTS_TIMEOUT_MS = 90_000;
@@ -49,6 +50,8 @@ async function boundedJson(response: Response): Promise<unknown> {
   } finally { reader.releaseLock(); }
 }
 export async function generateSpeech(input: GenerationRequest, clientSignal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+  const variant = getVoiceVariant(input.variantId);
+  if (!variant) throw new AppError("INVALID_VOICE", "Choose one of the available voice profiles.", 400);
   const key = process.env.GEMINI_API_KEY;
   if (!key?.trim()) {
     console.error("voiceover.configuration_missing", { key: "GEMINI_API_KEY" });
@@ -67,10 +70,10 @@ export async function generateSpeech(input: GenerationRequest, clientSignal?: Ab
       body: JSON.stringify({
         model: "gemini-3.8-flash-tts", store: false,
         input: [{ type: "user_input", content: [{ type: "text", text: input.text,
-          annotations: [{ type: "speech_metadata", style: input.persona.trim() ? input.persona : DEFAULT_PERSONA }],
+          annotations: [{ type: "speech_metadata", style: buildEffectiveDirection(variant.profile, input.direction) }],
         }] }],
         response_format: { type: "audio", mime_type: "audio/l16", sample_rate: 24000 },
-        generation_config: { speech_config: [{ voice: input.voice }] },
+        generation_config: { speech_config: [{ voice: variant.voice }] },
       }),
     });
     if (!response.ok) {

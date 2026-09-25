@@ -1,15 +1,8 @@
+import { DEFAULT_VARIANT_ID, getVoiceVariant, type VoiceVariantId } from "./voice-profiles";
 export const MAX_SCRIPT_WORDS = 3000;
 export function countWords(text: string): number { return text.match(/\S+/gu)?.length ?? 0; }
-export const MAX_PERSONA = 1000;
-export const VOICES = [
-  { id: "Kore", label: "Kore", description: "Firm & clear" },
-  { id: "Puck", label: "Puck", description: "Upbeat & expressive" },
-  { id: "Sulafat", label: "Sulafat", description: "Warm & inviting" },
-] as const;
-export type Voice = (typeof VOICES)[number]["id"];
-export const DEFAULT_VOICE: Voice = "Sulafat";
-export const DEFAULT_PERSONA = "Warm, trustworthy local expert speaking naturally to one familiar listener. For Telugu text, use a native Andhra Telugu accent and everyday conversational intonation. Relaxed medium pace; short, natural pauses at punctuation. Clear pronunciation with gentle emphasis on the offer and call to action. Confident and friendly, without announcer-style projection or exaggerated drama. Preserve the script exactly; do not translate or add words.";
-export type GenerationRequest = { text: string; persona: string; voice: Voice };
+export const MAX_DIRECTION = 1000;
+export type GenerationRequest = { text: string; direction: string; variantId: VoiceVariantId };
 export class AppError extends Error {
   constructor(public code: string, message: string, public status: number) {
     super(message); this.name = "AppError";
@@ -23,11 +16,10 @@ export function validateRequest(value: unknown): GenerationRequest {
     throw new AppError("INVALID_TEXT", "Enter a script to generate a voiceover.", 400);
   if (countWords(data.text) > MAX_SCRIPT_WORDS)
     throw new AppError("TEXT_TOO_LONG", "Keep your script to 3,000 words or fewer.", 400);
-  if (data.persona !== undefined && (typeof data.persona !== "string" || data.persona.length > MAX_PERSONA))
-    throw new AppError("INVALID_PERSONA", "Keep delivery instructions to 1,000 characters or fewer.", 400);
-  const voice = data.voice ?? DEFAULT_VOICE;
-  if (!VOICES.some((item) => item.id === voice))
-    throw new AppError("INVALID_VOICE", "Choose one of the available voices.", 400);
+  if (data.direction !== undefined && (typeof data.direction !== "string" || data.direction.length > MAX_DIRECTION))
+    throw new AppError("INVALID_DIRECTION", "Keep persona and direction to 1,000 characters or fewer.", 400);
+  const variant = getVoiceVariant(data.variantId ?? DEFAULT_VARIANT_ID);
+  if (!variant) throw new AppError("INVALID_VOICE", "Choose one of the available voice profiles.", 400);
   // Preserve submitted text, including whitespace and Unicode, exactly.
-  return { text: data.text, persona: (data.persona as string | undefined) ?? "", voice: voice as Voice };
+  return { text: data.text, direction: (data.direction as string | undefined) ?? "", variantId: variant.id };
 }
