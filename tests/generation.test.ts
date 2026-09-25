@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/generate/route";
 import { generateSpeech, TTS_TIMEOUT_MS } from "@/lib/server/tts";
 import { MAX_SCRIPT_WORDS, MAX_DIRECTION, countWords, validateRequest } from "@/lib/contracts";
-import { buildEffectiveDirection, getVoiceVariant, VOICE_VARIANTS } from "@/lib/voice-profiles";
+import { buildEffectiveDirection, getVoiceVariant, TRANSCRIPT_FIDELITY_INSTRUCTION, VOICE_VARIANTS } from "@/lib/voice-profiles";
 import { isValidWav, pcmToWav, MAX_PCM_BYTES } from "@/lib/audio";
 
 const input = { text: "  నమస్కారం! Welcome.\n", direction: "Warm, medium pace.", variantId: "firm-female" as const };
@@ -94,14 +94,14 @@ describe("request validation and endpoint", () => {
 });
 
 describe("provider reliability", () => {
-  it.each(VOICE_VARIANTS)("resolves $id to its provider voice and its own baseline", async (variant) => {
+  it.each(VOICE_VARIANTS)("resolves $id to its provider voice and replaces the default with edited direction", async (variant) => {
     const fetchMock = vi.fn().mockResolvedValue(providerResponse()); vi.stubGlobal("fetch", fetchMock);
     const direction = "Use natural Andhra Telugu pronunciation. ".padEnd(MAX_DIRECTION, " ");
     const response = await POST(request({ text: input.text, direction, variantId: variant.id }));
     expect(response.status).toBe(200);
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.input[0].content[0].text).toBe(input.text);
-    expect(body.input[0].content[0].annotations[0].style).toBe(buildEffectiveDirection(variant.profile, direction));
+    expect(body.input[0].content[0].annotations[0].style).toBe(`${direction}\n\n${TRANSCRIPT_FIDELITY_INSTRUCTION}`);
     expect(body.generation_config.speech_config[0].voice).toBe(variant.voice);
   });
   it("uses the selected profile baseline for blank direction without changing the spoken text", async () => {
@@ -110,7 +110,7 @@ describe("provider reliability", () => {
     await generateSpeech({ ...input, direction: "  " });
     const content = JSON.parse(fetchMock.mock.calls[0][1].body).input[0].content[0];
     expect(content.text).toBe(input.text);
-    expect(content.annotations[0].style).toBe(buildEffectiveDirection(getVoiceVariant(input.variantId)!.profile, ""));
+    expect(content.annotations[0].style).toBe(`${getVoiceVariant(input.variantId)!.profile.baseDirection}\n\n${TRANSCRIPT_FIDELITY_INSTRUCTION}`);
   });
   it("aborts a stalled provider after the deadline", async () => {
     vi.useFakeTimers();

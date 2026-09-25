@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useState, type FormEvent } from "react";
 import { MAX_DIRECTION, MAX_SCRIPT_WORDS, countWords } from "@/lib/contracts";
-import { DEFAULT_VARIANT_ID, VOICE_PROFILES, VOICE_VARIANTS, getVoiceVariant, variantLabel, type VoiceVariantId } from "@/lib/voice-profiles";
+import { DEFAULT_VARIANT_ID, VOICE_PROFILES, VOICE_VARIANTS, getVoiceVariant, variantLabel, type VoiceDirections, type VoiceVariantId } from "@/lib/voice-profiles";
 import { useAuditions } from "./use-auditions";
 import { useVoicePreviews } from "./use-voice-previews";
 import { AuditionResults } from "./audition-results";
@@ -12,7 +12,7 @@ function SoundMark() {
 
 export default function VoiceoverStudio() {
   const [text, setText] = useState("");
-  const [direction, setDirection] = useState("");
+  const [directions, setDirections] = useState<VoiceDirections>(() => Object.fromEntries(VOICE_VARIANTS.map((variant) => [variant.id, variant.profile.baseDirection])) as VoiceDirections);
   const [selectedVoiceVariants, setSelectedVoiceVariants] = useState<VoiceVariantId[]>([DEFAULT_VARIANT_ID]);
   const [error, setError] = useState("");
   const auditions = useAuditions();
@@ -25,12 +25,17 @@ export default function VoiceoverStudio() {
   const previewVariant = previews.preview ? getVoiceVariant(previews.preview.variantId) : undefined;
 
   function pauseAudio() { studio.current?.querySelectorAll("audio").forEach((audio) => audio.pause()); }
+  function updateDirection(variantId: VoiceVariantId, direction: string) {
+    setDirections((current) => ({ ...current, [variantId]: direction }));
+    setError("");
+    if (previews.preview?.variantId === variantId) { pauseAudio(); previews.stop(); }
+  }
   async function generate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (auditions.loading) return;
     if (!selectedVoiceVariants.length) { setError("Select at least one voice."); return; }
     setError(""); pauseAudio(); previews.stop();
-    try { await auditions.generate(text, direction, selectedVoiceVariants); }
+    try { await auditions.generate(text, directions, selectedVoiceVariants); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Check your transcript and direction."); }
   }
 
@@ -56,7 +61,7 @@ export default function VoiceoverStudio() {
 
           <section className="profiles-section" aria-labelledby="profiles-title">
             <div className="label-row"><h2 id="profiles-title"><span className="step">02</span> Voice Profiles</h2><span className="character-count">{selectedVoiceVariants.length} selected</span></div>
-            <p className="section-hint" id="profiles-hint">Select one or more voices. Preview uses a short sample and is cached for this session.</p>
+            <p className="section-hint" id="profiles-hint">Select voices and edit each direction for your transcript. Preview uses a short sample with that voice’s current direction.</p>
             <label className="select-all-voices"><input type="checkbox" checked={allVoicesSelected} disabled={auditions.loading}
               ref={(input) => { if (input) input.indeterminate = selectedVoiceVariants.length > 0 && !allVoicesSelected; }}
               onChange={(event) => { setSelectedVoiceVariants(event.target.checked ? VOICE_VARIANTS.map((variant) => variant.id) : []); setError(""); }}
@@ -64,12 +69,20 @@ export default function VoiceoverStudio() {
             <div className="profile-grid">
               {VOICE_PROFILES.map((profile) => <fieldset className="profile-card" key={profile.id} disabled={auditions.loading}>
                 <legend>{profile.name}</legend><p>{profile.description}</p>
-                {VOICE_VARIANTS.filter((variant) => variant.profile.id === profile.id).map((variant) => <div className="profile-variant" key={variant.id}>
+                {VOICE_VARIANTS.filter((variant) => variant.profile.id === profile.id).map((variant) => <div className="voice-settings" key={variant.id}>
+                  <div className="profile-variant">
                   <label><input type="checkbox" checked={selectedVoiceVariants.includes(variant.id)} aria-label={variantLabel(variant)} aria-describedby="profiles-hint" onChange={(event) => {
                     setSelectedVoiceVariants((current) => event.target.checked ? [...current, variant.id] : current.filter((id) => id !== variant.id));
                     setError("");
                   }} /><span>{variant.gender}<small>{variant.voice}</small></span></label>
-                  <button className="preview-button" type="button" aria-label={`Preview ${variantLabel(variant)}`} disabled={previews.preview?.loading && previews.preview.variantId === variant.id} onClick={() => { pauseAudio(); void previews.load(variant.id); }}>{previews.preview?.loading && previews.preview.variantId === variant.id ? "Loading…" : "Preview"}</button>
+                  <button className="preview-button" type="button" aria-label={`Preview ${variantLabel(variant)}`} disabled={previews.preview?.loading && previews.preview.variantId === variant.id} onClick={() => { pauseAudio(); void previews.load(variant.id, directions[variant.id]); }}>{previews.preview?.loading && previews.preview.variantId === variant.id ? "Loading…" : "Preview"}</button>
+                  </div>
+                  <div className="voice-direction-heading"><label htmlFor={`direction-${variant.id}`}>Direction</label><button className="preview-button" type="button" aria-label={`Reset ${variant.voice} direction`} disabled={directions[variant.id] === variant.profile.baseDirection} onClick={() => updateDirection(variant.id, variant.profile.baseDirection)}>Reset</button></div>
+                  <div className="direction-field">
+                    <textarea id={`direction-${variant.id}`} aria-label={`${variant.voice} direction`} className="persona-input voice-direction" maxLength={MAX_DIRECTION} value={directions[variant.id]} onChange={(event) => updateDirection(variant.id, event.target.value)} aria-describedby={`direction-count-${variant.id}`} />
+                    {directions[variant.id].length > 0 && <button className="clear-script" type="button" aria-label={`Clear ${variant.voice} direction`} title="Clear direction" onClick={(event) => { updateDirection(variant.id, ""); event.currentTarget.parentElement?.querySelector("textarea")?.focus(); }}><span aria-hidden="true">×</span></button>}
+                  </div>
+                  <p className="field-hint" id={`direction-count-${variant.id}`}>{directions[variant.id].length.toLocaleString()} / {MAX_DIRECTION.toLocaleString()} characters{!directions[variant.id].trim() && " · Uses the default direction when blank."}</p>
                 </div>)}
               </fieldset>)}
             </div>
@@ -81,13 +94,6 @@ export default function VoiceoverStudio() {
               {previews.preview.error && <p className="error-message" role="alert">{previews.preview.error}</p>}
               {previews.preview.url && <audio key={previews.preview.playId} controls autoPlay src={previews.preview.url} aria-label={`${variantLabel(previewVariant)} preview`} onError={previews.playbackFailed} />}
             </div>}
-          </section>
-
-          <section className="direction-section">
-            <div className="label-row"><label htmlFor="direction"><span className="step">03</span> Persona &amp; Direction</label><span className="optional">Optional</span></div>
-            <p className="section-hint" id="direction-hint">Describe how the voiceover should sound — tone, emotion, pace, emphasis, audience, pronunciation, accent, energy, etc.</p>
-            <textarea id="direction" value={direction} onChange={(e) => setDirection(e.target.value)} maxLength={MAX_DIRECTION} disabled={auditions.loading} aria-describedby="direction-hint direction-count" placeholder="For example: conversational Andhra Telugu, natural pauses, and emphasis on the offer." className="persona-input" />
-            <p className="field-hint" id="direction-count">{direction.length.toLocaleString()} / {MAX_DIRECTION.toLocaleString()} characters</p>
           </section>
 
           <div className="generate-row">{auditions.loading && <button className="generate-button cancel-button" type="button" onClick={auditions.cancel}>Cancel</button>}<button className="generate-button" type="submit" disabled={auditions.loading || !text.trim() || overLimit || !selectedVoiceVariants.length}>{auditions.loading ? <><span className="spinner" />Generating…</> : <><SoundMark />Generate</>}</button></div>

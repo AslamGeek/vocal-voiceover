@@ -16,12 +16,13 @@ beforeEach(() => {
 afterEach(cleanup);
 const label = (id: VoiceVariantId) => variantLabel(getVoiceVariant(id)!);
 const checkbox = (id: VoiceVariantId) => screen.getByRole("checkbox", { name: label(id) }) as HTMLInputElement;
+const directionField = (id: VoiceVariantId) => screen.getByLabelText(`${getVoiceVariant(id)!.voice} direction`) as HTMLTextAreaElement;
 const download = (id: VoiceVariantId) => screen.getByRole("link", { name: `Download ${label(id)} WAV` });
 const previewButton = (id: VoiceVariantId) => screen.getByRole("button", { name: `Preview ${label(id)}` });
 const resultPlayer = (id: VoiceVariantId) => screen.getByLabelText(`${label(id)} voiceover`);
 const fill = (text = "  నమస్కారం! Hello, world.\n", direction = "Conversational Andhra Telugu, medium pace.") => {
   fireEvent.change(screen.getByLabelText(/01 Transcript/), { target: { value: text } });
-  fireEvent.change(screen.getByLabelText(/Persona & Direction/), { target: { value: direction } });
+  fireEvent.change(directionField("warm-female"), { target: { value: direction } });
 };
 const generate = () => fireEvent.click(screen.getByRole("button", { name: "Generate" }));
 function pendingRequests() {
@@ -40,7 +41,7 @@ it("shows exactly five profiles with ten independent variants and a warm female 
   expect(screen.getAllByRole("checkbox").filter((element) => (element as HTMLInputElement).checked)).toHaveLength(1);
   expect(screen.queryByRole("combobox")).toBeNull();
   expect(screen.queryByRole("radio")).toBeNull();
-  expect((screen.getByLabelText(/Persona & Direction/) as HTMLTextAreaElement).value).toBe("");
+  for (const variant of VOICE_VARIANTS) expect(directionField(variant.id).value).toBe(variant.profile.baseDirection);
   fill(); fireEvent.click(checkbox("warm-female"));
   expect(screen.getByRole("button", { name: "Generate" }).hasAttribute("disabled")).toBe(true);
   fireEvent.submit(screen.getByRole("button", { name: "Generate" }).closest("form")!);
@@ -56,6 +57,7 @@ it("uses one result path for one voice, locks duplicate submissions, and preserv
   expect(requestMock.mock.calls[0][0]).toEqual({ text: "Hello, world.", direction: "", variantId: "warm-female" });
   expect(checkbox("warm-male").closest("fieldset")?.disabled).toBe(true);
   expect((screen.getByRole("checkbox", { name: "Select all voices" }) as HTMLInputElement).disabled).toBe(true);
+  expect(directionField("warm-female").closest("fieldset")?.disabled).toBe(true);
   await act(async () => pending.get("warm-female")!.resolve(new Blob(["wav"])));
   expect(resultPlayer("warm-female").getAttribute("src")).toBe("blob:voice-1");
   const filename = download("warm-female").getAttribute("download");
@@ -64,9 +66,52 @@ it("uses one result path for one voice, locks duplicate submissions, and preserv
   expect(download("warm-female").getAttribute("download")).toBe(filename);
 });
 
+it("keeps each voice direction through selection changes and resets only that voice", async () => {
+  requestMock.mockResolvedValue(new Blob(["wav"])); render(<VoiceoverStudio />); fill();
+  fireEvent.change(directionField("warm-male"), { target: { value: "Quiet, slow English." } });
+  fireEvent.click(checkbox("warm-male")); fireEvent.click(checkbox("warm-male"));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select all voices" }));
+  expect(directionField("warm-male").value).toBe("Quiet, slow English.");
+  fireEvent.click(screen.getByRole("button", { name: "Clear Achird direction" }));
+  expect(directionField("warm-male").value).toBe("");
+  expect(document.activeElement).toBe(directionField("warm-male"));
+  expect(screen.queryByRole("button", { name: "Clear Achird direction" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Reset Achird direction" }));
+  expect(directionField("warm-male").value).toBe(getVoiceVariant("warm-male")!.profile.baseDirection);
+  expect(directionField("warm-female").value).toBe("Conversational Andhra Telugu, medium pace.");
+  generate(); await screen.findByText("10 of 10 auditions ready");
+  expect(requestMock.mock.calls.find(([input]) => input.variantId === "warm-male")![0].direction).toBe(getVoiceVariant("warm-male")!.profile.baseDirection);
+});
+
+it("refreshes previews after direction edits without reusing stale audio", async () => {
+  requestMock.mockResolvedValue(new Blob(["preview"])); render(<VoiceoverStudio />);
+  fireEvent.click(previewButton("warm-female")); await screen.findByLabelText(`${label("warm-female")} preview`);
+  fireEvent.change(directionField("warm-female"), { target: { value: "Crisp and energetic." } });
+  expect(screen.queryByLabelText("Voice preview")).toBeNull();
+  fireEvent.click(previewButton("warm-female")); await screen.findByLabelText(`${label("warm-female")} preview`);
+  expect(requestMock.mock.calls[1][0].direction).toBe("Crisp and energetic.");
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:voice-1");
+  fireEvent.click(screen.getByRole("button", { name: "Close preview" }));
+  fireEvent.click(previewButton("warm-female"));
+  expect(requestMock).toHaveBeenCalledTimes(2);
+});
+
+it("cancels an in-flight preview when its direction changes and ignores its late audio", async () => {
+  const pending = pendingRequests(); render(<VoiceoverStudio />);
+  fireEvent.click(previewButton("warm-female"));
+  fireEvent.change(directionField("warm-female"), { target: { value: "New delivery." } });
+  expect(requestMock.mock.calls[0][1].aborted).toBe(true);
+  await act(async () => pending.get("warm-female")!.resolve(new Blob(["old audio"])));
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
+  expect(screen.queryByLabelText("Voice preview")).toBeNull();
+});
+
 it("generates four voices including both genders with at most two requests and preserves partial success", async () => {
   const pending = pendingRequests(); render(<VoiceoverStudio />); fill();
-  for (const id of ["warm-male", "firm-female", "premium-male"] as const) fireEvent.click(checkbox(id));
+  for (const id of ["warm-male", "firm-female", "premium-male"] as const) {
+    fireEvent.click(checkbox(id));
+    fireEvent.change(directionField(id), { target: { value: `Custom direction for ${id}` } });
+  }
   generate();
   expect(requestMock.mock.calls.map(([input]) => input.variantId)).toEqual(["warm-female", "warm-male"]);
   expect(screen.getAllByText("Queued")).toHaveLength(2);
@@ -81,7 +126,7 @@ it("generates four voices including both genders with at most two requests and p
     pending.get("premium-male")!.resolve(new Blob(["wav"]));
   });
   expect(screen.getByText("3 of 4 auditions ready")).toBeTruthy();
-  for (const [input] of requestMock.mock.calls) expect(input).toMatchObject({ text: "  నమస్కారం! Hello, world.\n", direction: "Conversational Andhra Telugu, medium pace." });
+  for (const [input] of requestMock.mock.calls) expect(input).toMatchObject({ text: "  నమస్కారం! Hello, world.\n", direction: input.variantId === "warm-female" ? "Conversational Andhra Telugu, medium pace." : `Custom direction for ${input.variantId}` });
   expect(screen.getAllByRole("link", { name: /^Download / })).toHaveLength(3);
 });
 
@@ -143,10 +188,10 @@ it("retains transcript/direction limits and clears only the transcript with keyb
   fireEvent.change(field, { target: { value: field.value + "extra" } });
   expect(screen.getByRole("alert").textContent).toContain("3,000");
   expect(screen.getByRole("button", { name: "Generate" }).hasAttribute("disabled")).toBe(true);
-  expect(screen.getByLabelText(/Persona & Direction/).getAttribute("maxlength")).toBe("1000");
+  expect(directionField("warm-female").getAttribute("maxlength")).toBe("1000");
   fireEvent.click(screen.getByRole("button", { name: "Clear transcript" }));
   expect(field.value).toBe(""); expect(document.activeElement).toBe(field);
-  expect((screen.getByLabelText(/Persona & Direction/) as HTMLTextAreaElement).value).toBe("Keep this direction.");
+  expect((directionField("warm-female") as HTMLTextAreaElement).value).toBe("Keep this direction.");
   expect(checkbox("warm-female").checked).toBe(true);
 });
 
@@ -155,9 +200,9 @@ it.each(VOICE_VARIANTS)("lazily previews $id, caches it, and leaves the editor a
   const before = screen.getAllByRole("checkbox").map((element) => (element as HTMLInputElement).checked);
   fireEvent.click(previewButton(variant.id));
   await screen.findByLabelText(`${label(variant.id)} preview`);
-  expect(requestMock.mock.calls[0][0]).toEqual({ text: variant.profile.previewScript, direction: "", variantId: variant.id });
+  expect(requestMock.mock.calls[0][0]).toEqual({ text: variant.profile.previewScript, direction: directionField(variant.id).value, variantId: variant.id });
   expect((screen.getByLabelText(/01 Transcript/) as HTMLTextAreaElement).value).toBe("  నమస్కారం! Hello, world.\n");
-  expect((screen.getByLabelText(/Persona & Direction/) as HTMLTextAreaElement).value).toBe("Conversational Andhra Telugu, medium pace.");
+  expect((directionField("warm-female") as HTMLTextAreaElement).value).toBe("Conversational Andhra Telugu, medium pace.");
   expect(screen.getAllByRole("checkbox").map((element) => (element as HTMLInputElement).checked)).toEqual(before);
   expect(screen.queryByRole("link", { name: /^Download / })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Close preview" }));

@@ -29,7 +29,7 @@ textarea::placeholder{color:#757f78;opacity:1}
 .clear-script:not(:disabled):hover{background:#e8eeea;color:var(--ink)}
 .field-hint{font-size:12px;color:#69746d;margin:13px 0 0}
 .script-section{padding-bottom:25px;border-bottom:1px solid var(--line)}
-.direction-section{padding-top:25px}.section-hint{font-size:14px;color:var(--muted);margin:11px 0 15px}
+.section-hint{font-size:14px;color:var(--muted);margin:11px 0 15px}
 .persona-input{border:1px solid var(--line);background:#fafbfa;border-radius:9px;padding:14px 16px;min-height:126px;font-size:14px}
 .audition-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:16px}
 .audition{padding:16px;background:#fff;border:1px solid var(--line);border-radius:10px;min-width:0}
@@ -70,6 +70,10 @@ textarea::placeholder{color:#757f78;opacity:1}
 .profile-card legend{padding:0 6px;font-size:16px;font-weight:600}
 .profile-card>p{font-size:13px;line-height:1.6;color:var(--muted);margin:0 0 12px}
 .profile-variant{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0}
+.voice-settings+.voice-settings{margin-top:20px;padding-top:12px;border-top:1px solid var(--line)}
+.voice-direction-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:4px 0 8px;font-size:13px;font-weight:600}
+.direction-field{position:relative}
+.voice-direction{min-height:160px;font-size:13px;padding:10px 50px 10px 12px}
 .profile-variant label{display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;min-height:44px}
 .profile-variant small{display:block;margin-top:3px;color:var(--muted);font-size:12px}
 .profile-variant input{accent-color:var(--accent);width:18px;height:18px}

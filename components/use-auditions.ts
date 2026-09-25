@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { requestVoiceover, type GenerationProgress } from "@/lib/api-client";
 import { validateRequest } from "@/lib/contracts";
-import { getVoiceVariant, type VoiceVariantId } from "@/lib/voice-profiles";
+import { getVoiceVariant, type VoiceDirections, type VoiceVariantId } from "@/lib/voice-profiles";
 import { voiceoverFilename } from "@/lib/filename";
 
 export const MAX_CONCURRENT_AUDITIONS = 2;
@@ -22,10 +22,10 @@ export function useAuditions() {
     urls.current.forEach((url) => URL.revokeObjectURL(url)); urls.current = [];
   }, []);
 
-  async function generate(text: string, direction: string, variantIds: VoiceVariantId[]) {
+  async function generate(text: string, directions: VoiceDirections, variantIds: VoiceVariantId[]) {
     if (active.current) return;
     if (!variantIds.length) throw new Error("Select at least one voice.");
-    const inputs = [...new Set(variantIds)].map((variantId) => validateRequest({ text, direction, variantId }));
+    const inputs = [...new Set(variantIds)].map((variantId) => validateRequest({ text, direction: directions[variantId], variantId }));
     const batch = new AbortController();
     active.current = batch; // Synchronous lock, before React commits disabled state.
     urls.current.forEach((url) => URL.revokeObjectURL(url)); urls.current = [];

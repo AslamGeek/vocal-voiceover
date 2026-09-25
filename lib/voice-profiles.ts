@@ -44,6 +44,7 @@ export type ProfileId = VoiceProfile["id"];
 export type Gender = "Female" | "Male";
 export type Voice = VoiceProfile["femaleVoice" | "maleVoice"];
 export type VoiceVariantId = `${ProfileId}-female` | `${ProfileId}-male`;
+export type VoiceDirections = Record<VoiceVariantId, string>;
 export type VoiceVariant = { id: VoiceVariantId; profile: VoiceProfile; gender: Gender; voice: Voice };
 export const VOICE_VARIANTS: readonly VoiceVariant[] = VOICE_PROFILES.flatMap((profile) => [
   { id: `${profile.id}-female` as const, profile, gender: "Female" as const, voice: profile.femaleVoice },
@@ -54,5 +55,5 @@ export const TRANSCRIPT_FIDELITY_INSTRUCTION = "Read the transcript exactly as w
 export function getVoiceVariant(id: unknown): VoiceVariant | undefined { return VOICE_VARIANTS.find((variant) => variant.id === id); }
 export function variantLabel(variant: VoiceVariant): string { return `${variant.profile.name} ${variant.gender} (${variant.voice})`; }
 export function buildEffectiveDirection(profile: Pick<VoiceProfile, "baseDirection">, userDirection: string): string {
-  return [profile.baseDirection, userDirection.trim() ? userDirection : "", TRANSCRIPT_FIDELITY_INSTRUCTION].filter(Boolean).join("\n\n");
+  return [userDirection.trim() ? userDirection : profile.baseDirection, TRANSCRIPT_FIDELITY_INSTRUCTION].join("\n\n");
 }
