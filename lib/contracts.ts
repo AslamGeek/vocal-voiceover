@@ -6,6 +6,8 @@ export const VOICES = [
   { id: "Sulafat", label: "Sulafat", description: "Warm & inviting" },
 ] as const;
 export type Voice = (typeof VOICES)[number]["id"];
+export const DEFAULT_VOICE: Voice = "Sulafat";
+export const DEFAULT_PERSONA = "Warm, trustworthy local expert speaking naturally to one familiar listener. For Telugu text, use a native Andhra Telugu accent and everyday conversational intonation. Relaxed medium pace; short, natural pauses at punctuation. Clear pronunciation with gentle emphasis on the offer and call to action. Confident and friendly, without announcer-style projection or exaggerated drama. Preserve the script exactly; do not translate or add words.";
 export type GenerationRequest = { text: string; persona: string; voice: Voice };
 export class AppError extends Error {
   constructor(public code: string, message: string, public status: number) {
@@ -22,7 +24,7 @@ export function validateRequest(value: unknown): GenerationRequest {
     throw new AppError("TEXT_TOO_LONG", "Keep your script to 1,000 characters or fewer.", 400);
   if (data.persona !== undefined && (typeof data.persona !== "string" || data.persona.length > MAX_PERSONA))
     throw new AppError("INVALID_PERSONA", "Keep delivery instructions to 1,000 characters or fewer.", 400);
-  const voice = data.voice ?? "Kore";
+  const voice = data.voice ?? DEFAULT_VOICE;
   if (!VOICES.some((item) => item.id === voice))
     throw new AppError("INVALID_VOICE", "Choose one of the available voices.", 400);
   // Preserve submitted text, including whitespace and Unicode, exactly.

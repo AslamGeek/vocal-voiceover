@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/generate/route";
 import { generateSpeech, TTS_TIMEOUT_MS } from "@/lib/server/tts";
-import { MAX_TEXT, MAX_PERSONA, validateRequest } from "@/lib/contracts";
+import { DEFAULT_PERSONA, MAX_TEXT, MAX_PERSONA, validateRequest } from "@/lib/contracts";
 import { isValidWav, pcmToWav, MAX_PCM_BYTES } from "@/lib/audio";
 
 const input = { text: "  నమస్కారం! Welcome.\n", persona: "Warm, medium pace.", voice: "Kore" as const };
@@ -18,7 +18,7 @@ afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.useRealTimers();
 describe("request validation and endpoint", () => {
   it("preserves script and persona exactly and defaults optional fields", () => {
     expect(validateRequest(input)).toEqual(input);
-    expect(validateRequest({ text: "Hello" })).toEqual({ text: "Hello", persona: "", voice: "Kore" });
+    expect(validateRequest({ text: "Hello" })).toEqual({ text: "Hello", persona: "", voice: "Sulafat" });
   });
   it.each([
     ["empty", { ...input, text: " \n " }],
@@ -85,6 +85,14 @@ describe("request validation and endpoint", () => {
 });
 
 describe("provider reliability", () => {
+  it("uses Andhra Telugu direction for blank persona without changing the spoken text", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(providerResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    await generateSpeech({ ...input, persona: "  " });
+    const content = JSON.parse(fetchMock.mock.calls[0][1].body).input[0].content[0];
+    expect(content.text).toBe(input.text);
+    expect(content.annotations[0].style).toBe(DEFAULT_PERSONA);
+  });
   it("aborts a stalled provider after the deadline", async () => {
     vi.useFakeTimers();
     let providerSignal: AbortSignal | undefined;

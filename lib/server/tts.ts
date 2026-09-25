@@ -1,4 +1,4 @@
-import { AppError, type GenerationRequest } from "../contracts";
+import { AppError, DEFAULT_PERSONA, type GenerationRequest } from "../contracts";
 import { MAX_PCM_BYTES, pcmToWav } from "../audio";
 
 export const TTS_TIMEOUT_MS = 90_000;
@@ -67,7 +67,7 @@ export async function generateSpeech(input: GenerationRequest, clientSignal?: Ab
       body: JSON.stringify({
         model: "gemini-3.8-flash-tts", store: false,
         input: [{ type: "user_input", content: [{ type: "text", text: input.text,
-          annotations: [{ type: "speech_metadata", style: input.persona || "Natural, clear, conversational delivery." }],
+          annotations: [{ type: "speech_metadata", style: input.persona.trim() ? input.persona : DEFAULT_PERSONA }],
         }] }],
         response_format: { type: "audio", mime_type: "audio/l16", sample_rate: 24000 },
         generation_config: { speech_config: [{ voice: input.voice }] },

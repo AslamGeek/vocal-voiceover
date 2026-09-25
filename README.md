@@ -2,6 +2,10 @@
 
 A small voiceover app: enter a script and delivery direction, generate speech, listen, and download a WAV.
 
+Single voice is the default. Switch to **Compare voices** to select two or three of the existing voices and generate auditions together. Each gets the identical script and delivery direction, an independent request, status, player, and voice-named WAV download. Successful auditions remain available if another fails. Playing one audition pauses the others. Three voices use three provider calls; there are no automatic retries.
+
+The default voice is Sulafat (warm), with editable delivery direction for conversational Andhra Telugu: relaxed medium pace, natural pauses, and gentle emphasis. Use Telugu script for Telugu speech. Custom directions are passed through unchanged; clearing the direction field restores the default on the server. The spoken script is never rewritten or translated by the app.
+
 ## Local development
 
 Use Node.js 22.13+ (Node 24 recommended).

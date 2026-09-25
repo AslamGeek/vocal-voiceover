@@ -11,9 +11,105 @@ beforeEach(() => {
   URL.revokeObjectURL = vi.fn();
 });
 afterEach(cleanup);
+
+it("defaults to single voice and requires at least two comparison voices", () => {
+  render(<VoiceoverStudio />); fillScript();
+  expect((screen.getByRole("radio", { name: "Single voice" }) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(screen.getByRole("radio", { name: "Compare voices" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: /Kore/ }));
+  fireEvent.click(screen.getByRole("checkbox", { name: /Puck/ }));
+  expect(screen.getByRole("button", { name: "Generate auditions" }).hasAttribute("disabled")).toBe(true);
+  fireEvent.submit(screen.getByRole("button", { name: "Generate auditions" }).closest("form")!);
+  expect(requestMock).not.toHaveBeenCalled();
+  expect(screen.getByRole("alert").textContent).toContain("at least two");
+});
+it("compares the identical input, prevents duplicate batches, and retains partial success", async () => {
+  const pending: Record<string, { resolve: (blob: Blob) => void; reject: (error: Error) => void }> = {};
+  requestMock.mockImplementation((input) => new Promise((resolve, reject) => { pending[input.voice] = { resolve, reject }; }));
+  render(<VoiceoverStudio />); fillScript();
+  fireEvent.change(screen.getByLabelText(/Delivery direction/), { target: { value: "Warm and relaxed." } });
+  fireEvent.click(screen.getByRole("radio", { name: "Compare voices" }));
+  const form = screen.getByRole("button", { name: "Generate auditions" }).closest("form")!;
+  fireEvent.submit(form); fireEvent.submit(form);
+  expect(requestMock).toHaveBeenCalledTimes(3);
+  expect(requestMock.mock.calls.map(([input]) => input)).toEqual([
+    { text: "Hello, world.", persona: "Warm and relaxed.", voice: "Kore" },
+    { text: "Hello, world.", persona: "Warm and relaxed.", voice: "Puck" },
+    { text: "Hello, world.", persona: "Warm and relaxed.", voice: "Sulafat" },
+  ]);
+  await act(async () => { pending.Kore.resolve(new Blob(["wav"])); pending.Puck.reject(new Error("Service is busy.")); });
+  expect(screen.getByRole("link", { name: "Download Kore WAV" }).getAttribute("download")).toBe("voiceover-kore.wav");
+  expect(screen.getByRole("alert").textContent).toContain("Puck: Service is busy.");
+  expect(screen.getByRole("button", { name: "Generating auditions…" }).hasAttribute("disabled")).toBe(true);
+  await act(async () => pending.Sulafat.resolve(new Blob(["wav"])));
+  expect(screen.getByRole("status").textContent).toBe("2 of 3 auditions ready");
+  expect(screen.getByRole("button", { name: "Generate auditions" }).hasAttribute("disabled")).toBe(false);
+});
+it("generates only selected comparison voices and pauses the other player", async () => {
+  requestMock.mockResolvedValue(new Blob(["wav"]));
+  const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+  render(<VoiceoverStudio />); fillScript();
+  fireEvent.click(screen.getByRole("radio", { name: "Compare voices" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: /Puck/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Generate auditions" }));
+  await screen.findByRole("link", { name: "Download Sulafat WAV" });
+  expect(requestMock.mock.calls.map(([input]) => input.voice)).toEqual(["Kore", "Sulafat"]);
+  const kore = screen.getByLabelText("Kore voiceover");
+  const sulafat = screen.getByLabelText("Sulafat voiceover");
+  fireEvent.play(kore);
+  expect(pause).toHaveBeenCalledTimes(1);
+  expect(pause.mock.instances[0]).toBe(sulafat);
+  fireEvent.error(kore);
+  expect(screen.getByRole("alert").textContent).toContain("Kore: This audio");
+});
+it("releases all comparison URLs when replaced or unmounted", async () => {
+  requestMock.mockResolvedValue(new Blob(["wav"]));
+  let id = 0;
+  vi.mocked(URL.createObjectURL).mockImplementation(() => "blob:compare-" + ++id);
+  const view = render(<VoiceoverStudio />); fillScript();
+  fireEvent.click(screen.getByRole("radio", { name: "Compare voices" }));
+  fireEvent.click(screen.getByRole("button", { name: "Generate auditions" }));
+  await screen.findByRole("link", { name: "Download Sulafat WAV" });
+  fireEvent.click(screen.getByRole("button", { name: "Generate auditions" }));
+  await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(6));
+  expect(URL.revokeObjectURL).toHaveBeenCalledTimes(3);
+  view.unmount();
+  expect(URL.revokeObjectURL).toHaveBeenCalledTimes(6);
+});
+it("cancels every comparison request on unmount and ignores late results", async () => {
+  const resolves: ((blob: Blob) => void)[] = [];
+  requestMock.mockImplementation(() => new Promise((resolve) => { resolves.push(resolve); }));
+  const view = render(<VoiceoverStudio />); fillScript();
+  fireEvent.click(screen.getByRole("radio", { name: "Compare voices" }));
+  fireEvent.click(screen.getByRole("button", { name: "Generate auditions" }));
+  const signals = requestMock.mock.calls.map(([, signal]) => signal);
+  view.unmount();
+  expect(signals).toHaveLength(3);
+  expect(signals.every((signal) => signal.aborted)).toBe(true);
+  await act(async () => resolves.forEach((resolve) => resolve(new Blob(["wav"]))));
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
+});
+it("returns to single generation after a comparison", async () => {
+  requestMock.mockResolvedValue(new Blob(["wav"]));
+  render(<VoiceoverStudio />); fillScript();
+  fireEvent.click(screen.getByRole("radio", { name: "Compare voices" }));
+  fireEvent.click(screen.getByRole("button", { name: "Generate auditions" }));
+  await screen.findByRole("link", { name: "Download Sulafat WAV" });
+  fireEvent.click(screen.getByRole("radio", { name: "Single voice" }));
+  fireEvent.click(screen.getByRole("button", { name: "Generate voice" }));
+  await screen.findByLabelText("Generated voiceover");
+  expect(requestMock).toHaveBeenCalledTimes(4);
+  expect(requestMock.mock.calls[3][0].voice).toBe("Sulafat");
+});
 function fillScript() {
   fireEvent.change(screen.getByLabelText(/Your script/), { target: { value: "Hello, world." } });
 }
+it("starts with the warm voice and editable Andhra Telugu delivery direction", () => {
+  render(<VoiceoverStudio />);
+  expect((screen.getByLabelText("Voice") as HTMLSelectElement).value).toBe("Sulafat");
+  expect((screen.getByLabelText(/Delivery direction/) as HTMLTextAreaElement).value).toContain("native Andhra Telugu accent");
+  expect((screen.getByLabelText(/Your script/) as HTMLTextAreaElement).value).toBe("");
+});
 it("prevents duplicate submissions while generating and exposes the result", async () => {
   let resolve!: (blob: Blob) => void;
   requestMock.mockReturnValue(new Promise((done) => { resolve = done; }));
