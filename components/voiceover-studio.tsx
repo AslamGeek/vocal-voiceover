@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { requestVoiceover } from "@/lib/api-client";
+import { requestVoiceover, type GenerationProgress } from "@/lib/api-client";
 import { useVoiceComparison, VoiceComparisonResults } from "./voice-comparison";
-import { DEFAULT_PERSONA, DEFAULT_VOICE, MAX_PERSONA, MAX_TEXT, VOICES, validateRequest, type Voice } from "@/lib/contracts";
+import { DEFAULT_PERSONA, DEFAULT_VOICE, MAX_PERSONA, MAX_SCRIPT_WORDS, countWords, VOICES, validateRequest, type Voice } from "@/lib/contracts";
 
 function SoundMark({ small = false }: { small?: boolean }) {
   return <span className={`sound-mark ${small ? "small" : ""}`} aria-hidden="true">{[14, 26, 36, 22, 12].map((height, i) => <i key={i} style={{ height }} />)}</span>;
@@ -15,9 +15,12 @@ export default function VoiceoverStudio() {
   const [comparedVoices, setComparedVoices] = useState<Voice[]>(VOICES.map((item) => item.id));
   const comparison = useVoiceComparison();
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<GenerationProgress | null>(null);
   const [audio, setAudio] = useState<string | null>(null);
   const [error, setError] = useState("");
   const busy = loading || comparison.loading;
+  const words = countWords(text);
+  const overLimit = words > MAX_SCRIPT_WORDS;
   const pending = useRef<AbortController | null>(null);
   const audioUrl = useRef<string | null>(null);
   useEffect(() => () => {
@@ -39,10 +42,9 @@ export default function VoiceoverStudio() {
     }
     const controller = new AbortController();
     pending.current = controller;
-    setLoading(true); setError("");
-    const timeout = setTimeout(() => controller.abort("timeout"), 115_000);
+    setLoading(true); setError(""); setProgress(null);
     try {
-      const blob = await requestVoiceover(input, controller.signal);
+      const blob = await requestVoiceover(input, controller.signal, setProgress);
       if (controller.signal.aborted) return;
       const nextUrl = URL.createObjectURL(blob);
       const oldUrl = audioUrl.current;
@@ -50,10 +52,8 @@ export default function VoiceoverStudio() {
       setAudio(nextUrl);
       if (oldUrl) URL.revokeObjectURL(oldUrl);
     } catch (cause) {
-      if (controller.signal.reason === "timeout") setError("Voice generation took too long. Please try again.");
-      else if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Voice generation failed. Please try again.");
+      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Voice generation failed. Please try again.");
     } finally {
-      clearTimeout(timeout);
       if (pending.current === controller) { pending.current = null; setLoading(false); }
     }
   }
@@ -64,9 +64,10 @@ export default function VoiceoverStudio() {
       <form onSubmit={generate} className="workspace">
         <div className="input-column">
           <section className="script-section">
-            <div className="label-row"><label htmlFor="script"><span className="step">01</span> Your script</label><span className="character-count" id="script-count">{text.length.toLocaleString()} / {MAX_TEXT.toLocaleString()}</span></div>
-            <textarea id="script" name="text" value={text} onChange={(e) => setText(e.target.value)} maxLength={MAX_TEXT} required disabled={busy} aria-describedby="script-hint script-count" placeholder="Enter your script…" className="script-input" />
+            <div className="label-row"><label htmlFor="script"><span className="step">01</span> Your script</label><span className="character-count" id="script-count">{words.toLocaleString()} / {MAX_SCRIPT_WORDS.toLocaleString()} words</span></div>
+            <textarea id="script" name="text" value={text} onChange={(e) => setText(e.target.value)} required disabled={busy} aria-invalid={overLimit} aria-describedby={`script-hint script-count${overLimit ? " script-limit" : ""}`} placeholder="Enter your script…" className="script-input" />
             <p className="field-hint" id="script-hint">Your script is read without rewriting.</p>
+            {overLimit && <p className="error-message" id="script-limit" role="alert">Keep your script to 3,000 words or fewer.</p>}
           </section>
           <section className="direction-section">
             <div className="label-row"><label htmlFor="persona"><span className="step">02</span> Delivery direction</label><span className="optional">Optional</span></div>
@@ -82,10 +83,10 @@ export default function VoiceoverStudio() {
               {VOICES.map((option) => <label key={option.id}><input type="checkbox" checked={comparedVoices.includes(option.id)} onChange={(event) => {
                 setComparedVoices((current) => event.target.checked ? [...current, option.id] : current.filter((id) => id !== option.id));
               }} /><span>{option.label}<small>{option.description}</small></span></label>)}
-              <p id="comparison-hint">{comparedVoices.length} voices · {comparedVoices.length} separate generations. Each uses the same script and direction.</p>
+              <p id="comparison-hint">{comparedVoices.length} WAV files using the same script and direction. Longer scripts use multiple requests per voice.</p>
             </fieldset> : <div className="voice-row"><label htmlFor="voice">Voice</label><select id="voice" value={voice} disabled={busy} onChange={(e) => setVoice(e.target.value as Voice)}>{VOICES.map((option) => <option key={option.id} value={option.id}>{option.label} — {option.description}</option>)}</select></div>}
           </section>
-          <div className="generate-row"><button className="generate-button" type="submit" disabled={busy || !text.trim() || (compare && comparedVoices.length < 2)}>{busy ? <><span className="spinner" />{compare ? "Generating auditions…" : "Generating voice…"}</> : <><SoundMark small />{compare ? "Generate auditions" : "Generate voice"}</>}</button></div>
+          <div className="generate-row">{busy && <button className="download-button" type="button" onClick={() => { pending.current?.abort(); comparison.cancel(); }}>Cancel</button>}<button className="generate-button" type="submit" disabled={busy || !text.trim() || overLimit || (compare && comparedVoices.length < 2)}>{busy ? <><span className="spinner" />{compare ? "Generating auditions…" : "Generating voice…"}</> : <><SoundMark small />{compare ? "Generate auditions" : "Generate voice"}</>}</button></div>
           {error && <p className="error-message" role="alert">{error}</p>}
         </div>
         <section className={`output-column ${loading ? "is-generating" : ""}`} aria-labelledby="output-title">
@@ -93,7 +94,7 @@ export default function VoiceoverStudio() {
           <div className="output-heading"><h2 id="output-title">Your voiceover</h2><span className="output-tag">.WAV</span></div>
           <div className="output-center">
             <div className="sound-emblem"><SoundMark /></div>
-            <div role="status" aria-live="polite" aria-atomic="true"><h3>{loading ? "Generating voice…" : audio ? "Voiceover ready" : "No voiceover yet"}</h3><p>{loading ? "This may take a moment." : audio ? "Play or download the audio." : "Enter a script, then select Generate voice."}</p></div>
+            <div role="status" aria-live="polite" aria-atomic="true"><h3>{loading ? "Generating voice…" : audio ? "Voiceover ready" : "No voiceover yet"}</h3><p>{loading ? progress && progress.total > 1 ? `${progress.completed} of ${progress.total} sections complete. Keep this page open.` : "This may take a moment." : audio ? "Play or download the audio." : "Enter a script, then select Generate voice."}</p></div>
           </div>
           {audio && <div className="audio-result"><audio key={audio} controls src={audio} preload="metadata" aria-label="Generated voiceover" onError={() => setError("This audio couldn’t be played. Try generating it again.")} /><a href={audio} download="voiceover.wav" className="download-button"><span aria-hidden="true">↓</span> Download WAV</a><p className="audio-meta">24 kHz · Mono · 16-bit PCM</p></div>}
           </>}

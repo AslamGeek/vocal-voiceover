@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/generate/route";
 import { generateSpeech, TTS_TIMEOUT_MS } from "@/lib/server/tts";
-import { DEFAULT_PERSONA, MAX_TEXT, MAX_PERSONA, validateRequest } from "@/lib/contracts";
+import { DEFAULT_PERSONA, MAX_SCRIPT_WORDS, MAX_PERSONA, countWords, validateRequest } from "@/lib/contracts";
 import { isValidWav, pcmToWav, MAX_PCM_BYTES } from "@/lib/audio";
 
 const input = { text: "  నమస్కారం! Welcome.\n", persona: "Warm, medium pace.", voice: "Kore" as const };
@@ -23,7 +23,8 @@ describe("request validation and endpoint", () => {
   it.each([
     ["empty", { ...input, text: " \n " }],
     ["missing", { persona: "" }],
-    ["oversized", { ...input, text: "a".repeat(MAX_TEXT + 1) }],
+    ["oversized", { ...input, text: "word ".repeat(MAX_SCRIPT_WORDS + 1) }],
+    ["oversized section", { ...input, text: "a".repeat(801) }],
     ["invalid voice", { ...input, voice: "unknown" }],
     ["oversized persona", { ...input, persona: "a".repeat(MAX_PERSONA + 1) }],
     ["non-string persona", { ...input, persona: 12 }],
@@ -33,6 +34,13 @@ describe("request validation and endpoint", () => {
     const response = await POST(request(body));
     expect(response.status).toBe(400); expect(fetchMock).not.toHaveBeenCalled();
     expect((await response.json()).error.message).toEqual(expect.any(String));
+  });
+  it("accepts 3,000 words including Telugu, but rejects 3,001", () => {
+    const text = "నమస్కారం ప్రపంచం!\n".repeat(1500);
+    expect(countWords(text)).toBe(3000);
+    expect(validateRequest({ ...input, text }).text).toBe(text);
+    expect(() => validateRequest({ ...input, text: text + "extra" })).toThrow("3,000 words");
+    expect(countWords(" \n\t ")).toBe(0);
   });
   it("rejects malformed JSON, unsupported content type, oversized body, and foreign origins", async () => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);

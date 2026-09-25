@@ -27,3 +27,16 @@ export function isValidWav(bytes: Uint8Array): boolean {
     && v.getUint16(32, true) === 2 && v.getUint16(34, true) === 16
     && v.getUint32(40, true) === bytes.byteLength - 44 && (bytes.byteLength - 44) % 2 === 0;
 }
+
+// Assemble in the browser: only the individual sections pass through Vercel.
+// A single RIFF header describes all PCM frames; section headers are discarded.
+export function joinWavSections(sections: Uint8Array<ArrayBuffer>[]): Blob {
+  if (!sections.length || sections.some((section) => !isValidWav(section))) throw new Error("Invalid audio section");
+  const size = sections.reduce((total, section) => total + section.byteLength - 44, 0);
+  if (size > 0xffffffff - 36) throw new Error("The audio is too large for a WAV file.");
+  const header = sections[0].slice(0, 44);
+  const view = new DataView(header.buffer);
+  view.setUint32(4, size + 36, true);
+  view.setUint32(40, size, true);
+  return new Blob([header, ...sections.map((section) => section.subarray(44))], { type: "audio/wav" });
+}

@@ -1,5 +1,6 @@
 import { AppError, validateRequest } from "@/lib/contracts";
 import { generateSpeech } from "@/lib/server/tts";
+import { fitsSection } from "@/lib/script";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 const MAX_BODY_BYTES = 16_000;
@@ -37,6 +38,7 @@ async function readRequest(request: Request): Promise<unknown> {
 export async function POST(request: Request): Promise<Response> {
   try {
     const input = validateRequest(await readRequest(request));
+    if (!fitsSection(input.text)) throw new AppError("SECTION_TOO_LONG", "Generate long scripts through the studio so they can be processed in sections.", 400);
     const wav = await generateSpeech(input, request.signal);
     return new Response(wav, { headers: {
       "Content-Type": "audio/wav", "Content-Length": String(wav.byteLength),

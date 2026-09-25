@@ -2,7 +2,7 @@
 
 A small voiceover app: enter a script and delivery direction, generate speech, listen, and download a WAV.
 
-Single voice is the default. Switch to **Compare voices** to select two or three of the existing voices and generate auditions together. Each gets the identical script and delivery direction, an independent request, status, player, and voice-named WAV download. Successful auditions remain available if another fails. Playing one audition pauses the others. Three voices use three provider calls; there are no automatic retries.
+Single voice is the default. Switch to **Compare voices** to select two or three of the existing voices and generate auditions together. Each gets the identical script and delivery direction, independent progress, a player, and a voice-named WAV download. Successful auditions remain available if another fails. Playing one audition pauses the others. Each voice uses one provider call per script section; there are no automatic retries.
 
 The default voice is Sulafat (warm), with editable delivery direction for conversational Andhra Telugu: relaxed medium pace, natural pauses, and gentle emphasis. Use Telugu script for Telugu speech. Custom directions are passed through unchanged; clearing the direction field restores the default on the server. The spoken script is never rewritten or translated by the app.
 
@@ -60,7 +60,9 @@ This app deliberately has no user accounts. For a personal deployment, use Verce
 
 The integration uses `gemini-3.8-flash-tts` via the Interactions API. The exact submitted script is sent as text; persona is separate `speech_metadata.style`. There is no rewriting step. No audio or script is stored by the app, and provider interaction storage is disabled. This does not override the provider's own data policies.
 
-Script and persona are each limited to 1,000 UTF-16 code units. The audio limit is 4,000,000 PCM bytes (about 83 seconds), below Vercel's response limit. Overlong outputs fail with a request to shorten the script; audio is never truncated. Requests have a 16 KB body limit. Provider base64 is decoded on the server; the browser receives binary `audio/wav`.
+Scripts accept up to 3,000 whitespace-separated words, including Telugu. Over-limit pastes remain editable; generation is disabled until shortened. Delivery instructions retain a separate 1,000-character limit. Long scripts are split at sentence boundaries where possible, then whitespace or Unicode graphemes, into sections of at most 100 words and 800 UTF-16 code units. Text is not rewritten. The API accepts one section per request with a 16 KB body limit and a 4,000,000-byte PCM response cap (about 83 seconds), below Vercel's response limit.
+
+The browser generates sections sequentially per voice, validates each WAV, and joins the PCM frames under one WAV header for playback and download. The combined download can exceed the per-request cap without passing through Vercel again. Each section has its own timeout. Keep the page open; progress and cancellation are available in both modes. A failed section fails that voiceover instead of offering a truncated download. Longer scripts require more API calls and time, and delivery may vary slightly between sections. Provider quotas and output limits still apply; unusually slow sections may exceed the audio cap. Live long-form quality requires listening checks.
 
 Tests verify request validation, script fidelity in the outgoing payload, error mapping, timeouts, cancellation, malformed audio, exact WAV headers, duplicate submission, URL cleanup and frontend recovery. Real synthesis, accent quality and spoken-text fidelity still require a live key and listening checks; no model can be certified by a mocked response.
 

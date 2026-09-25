@@ -101,9 +101,51 @@ it("returns to single generation after a comparison", async () => {
   expect(requestMock).toHaveBeenCalledTimes(4);
   expect(requestMock.mock.calls[3][0].voice).toBe("Sulafat");
 });
+it("cancels pending comparison voices while retaining completed downloads", async () => {
+  requestMock.mockImplementation((input, signal, progress) => {
+    if (input.voice === "Kore") return Promise.resolve(new Blob(["wav"]));
+    progress?.({ completed: 2, total: 30 });
+    return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError"))));
+  });
+  render(<VoiceoverStudio />); fillScript();
+  fireEvent.click(screen.getByRole("radio", { name: "Compare voices" }));
+  fireEvent.click(screen.getByRole("button", { name: "Generate auditions" }));
+  await screen.findByRole("link", { name: "Download Kore WAV" });
+  expect(screen.getAllByText("2 of 30 sections complete")).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Generate auditions" }).hasAttribute("disabled")).toBe(false));
+  expect(screen.getByRole("link", { name: "Download Kore WAV" })).toBeTruthy();
+  expect(screen.getAllByRole("alert").every((element) => element.textContent?.includes("Generation cancelled."))).toBe(true);
+});
 function fillScript() {
   fireEvent.change(screen.getByLabelText(/Your script/), { target: { value: "Hello, world." } });
 }
+it("counts words, permits 3,000, and preserves over-limit text for editing", () => {
+  render(<VoiceoverStudio />);
+  const field = screen.getByLabelText(/Your script/) as HTMLTextAreaElement;
+  const text = "పదం ".repeat(3000);
+  fireEvent.change(field, { target: { value: text } });
+  expect(screen.getByText("3,000 / 3,000 words")).toBeTruthy();
+  expect(field.hasAttribute("maxlength")).toBe(false);
+  expect(screen.getByRole("button", { name: "Generate voice" }).hasAttribute("disabled")).toBe(false);
+  fireEvent.change(field, { target: { value: text + "extra" } });
+  expect(field.value).toBe(text + "extra");
+  expect(screen.getByRole("alert").textContent).toContain("3,000 words");
+  expect(screen.getByRole("button", { name: "Generate voice" }).hasAttribute("disabled")).toBe(true);
+});
+it("shows section progress and lets users cancel a long generation", async () => {
+  requestMock.mockImplementation((_input, signal, progress) => new Promise((_resolve, reject) => {
+    progress?.({ completed: 1, total: 30 });
+    signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+  }));
+  render(<VoiceoverStudio />); fillScript();
+  fireEvent.click(screen.getByRole("button", { name: "Generate voice" }));
+  expect(screen.getByRole("status").textContent).toContain("1 of 30 sections complete");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Generate voice" }).hasAttribute("disabled")).toBe(false));
+  expect(requestMock.mock.calls[0][1].aborted).toBe(true);
+  expect(screen.queryByRole("alert")).toBeNull();
+});
 it("starts with the warm voice and editable Andhra Telugu delivery direction", () => {
   render(<VoiceoverStudio />);
   expect((screen.getByLabelText("Voice") as HTMLSelectElement).value).toBe("Sulafat");

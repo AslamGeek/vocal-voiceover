@@ -1,4 +1,5 @@
-export const MAX_TEXT = 1000;
+export const MAX_SCRIPT_WORDS = 3000;
+export function countWords(text: string): number { return text.match(/\S+/gu)?.length ?? 0; }
 export const MAX_PERSONA = 1000;
 export const VOICES = [
   { id: "Kore", label: "Kore", description: "Firm & clear" },
@@ -20,8 +21,8 @@ export function validateRequest(value: unknown): GenerationRequest {
   const data = value as Record<string, unknown>;
   if (typeof data.text !== "string" || !data.text.trim())
     throw new AppError("INVALID_TEXT", "Enter a script to generate a voiceover.", 400);
-  if (data.text.length > MAX_TEXT)
-    throw new AppError("TEXT_TOO_LONG", "Keep your script to 1,000 characters or fewer.", 400);
+  if (countWords(data.text) > MAX_SCRIPT_WORDS)
+    throw new AppError("TEXT_TOO_LONG", "Keep your script to 3,000 words or fewer.", 400);
   if (data.persona !== undefined && (typeof data.persona !== "string" || data.persona.length > MAX_PERSONA))
     throw new AppError("INVALID_PERSONA", "Keep delivery instructions to 1,000 characters or fewer.", 400);
   const voice = data.voice ?? DEFAULT_VOICE;
