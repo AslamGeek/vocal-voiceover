@@ -27,6 +27,7 @@ export default function VoiceoverStudio() {
   const words = countWords(text);
   const overLimit = words > MAX_SCRIPT_WORDS;
   const pending = useRef<AbortController | null>(null);
+  const scriptInput = useRef<HTMLTextAreaElement | null>(null);
   const audioUrl = useRef<string | null>(null);
   useEffect(() => () => {
     pending.current?.abort();
@@ -72,7 +73,10 @@ export default function VoiceoverStudio() {
         <div className="input-column">
           <section className="script-section">
             <div className="label-row"><label htmlFor="script"><span className="step">01</span> Your script</label><span className="character-count" id="script-count">{words.toLocaleString()} / {MAX_SCRIPT_WORDS.toLocaleString()} words</span></div>
-            <textarea id="script" name="text" value={text} onChange={(e) => setText(e.target.value)} required disabled={busy} aria-invalid={overLimit} aria-describedby={`script-hint script-count${overLimit ? " script-limit" : ""}`} placeholder={`Enter your ${preset.language} script…`} className="script-input" />
+            <div className="script-field">
+              <textarea ref={scriptInput} id="script" name="text" value={text} onChange={(e) => setText(e.target.value)} required disabled={busy} aria-invalid={overLimit} aria-describedby={`script-hint script-count${overLimit ? " script-limit" : ""}`} placeholder={`Enter your ${preset.language} script…`} className="script-input" />
+              {text.length > 0 && <button className="clear-script" type="button" aria-label="Clear script" title="Clear script" disabled={busy} onClick={() => { setText(""); setError(""); scriptInput.current?.focus(); }}><span aria-hidden="true">×</span></button>}
+            </div>
             <p className="field-hint" id="script-hint">Your script is read without rewriting or translation.</p>
             {overLimit && <p className="error-message" id="script-limit" role="alert">Keep your script to 3,000 words or fewer.</p>}
           </section>
