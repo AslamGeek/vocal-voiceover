@@ -38,7 +38,7 @@ it("compares the identical input, prevents duplicate batches, and retains partia
     { text: "Hello, world.", persona: "Warm and relaxed.", voice: "Sulafat" },
   ]);
   await act(async () => { pending.Kore.resolve(new Blob(["wav"])); pending.Puck.reject(new Error("Service is busy.")); });
-  expect(screen.getByRole("link", { name: "Download Kore WAV" }).getAttribute("download")).toBe("voiceover-kore.wav");
+  expect(screen.getByRole("link", { name: "Download Kore WAV" }).getAttribute("download")).toMatch(/^Hello-world_\d{4}-\d{2}-\d{2}_\d{6}_Kore\.wav$/);
   expect(screen.getByRole("alert").textContent).toContain("Puck: Service is busy.");
   expect(screen.getByRole("button", { name: "Generating auditions…" }).hasAttribute("disabled")).toBe(true);
   await act(async () => pending.Sulafat.resolve(new Blob(["wav"])));
@@ -163,7 +163,11 @@ it("prevents duplicate submissions while generating and exposes the result", asy
   expect(screen.getByRole("button", { name: "Generating voice…" }).hasAttribute("disabled")).toBe(true);
   await act(async () => resolve(new Blob(["wav"], { type: "audio/wav" })));
   expect(screen.getByLabelText("Generated voiceover").getAttribute("src")).toBe("blob:voice-1");
-  expect(screen.getByRole("link", { name: /Download WAV/ }).getAttribute("download")).toBe("voiceover.wav");
+  const downloadName = screen.getByRole("link", { name: /Download WAV/ }).getAttribute("download");
+  expect(downloadName).toMatch(/^Hello-world_\d{4}-\d{2}-\d{2}_\d{6}_Sulafat\.wav$/);
+  fireEvent.change(screen.getByLabelText(/Your script/), { target: { value: "A different script" } });
+  fireEvent.change(screen.getByLabelText("Voice"), { target: { value: "Puck" } });
+  expect(screen.getByRole("link", { name: /Download WAV/ }).getAttribute("download")).toBe(downloadName);
   expect(screen.getByRole("button", { name: "Generate voice" }).hasAttribute("disabled")).toBe(false);
 });
 it("releases replaced and unmounted audio URLs", async () => {

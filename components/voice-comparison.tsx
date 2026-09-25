@@ -2,15 +2,16 @@
 import { useEffect, useRef, useState } from "react";
 import { requestVoiceover, type GenerationProgress } from "@/lib/api-client";
 import { VOICES, type GenerationRequest, type Voice } from "@/lib/contracts";
+import { voiceoverFilename } from "@/lib/filename";
 
-type Audition = { voice: Voice; status: "generating" | "ready" | "failed"; url?: string; error?: string; progress?: GenerationProgress };
+type Audition = { voice: Voice; filename: string; status: "generating" | "ready" | "failed"; url?: string; error?: string; progress?: GenerationProgress };
 
-function AuditionAudio({ voice, url, onPlay }: { voice: Voice; url: string; onPlay: (player: HTMLAudioElement) => void }) {
+function AuditionAudio({ voice, url, filename, onPlay }: { voice: Voice; url: string; filename: string; onPlay: (player: HTMLAudioElement) => void }) {
   const [failed, setFailed] = useState(false);
   return <div className="audio-result">
     <audio controls src={url} preload="metadata" aria-label={`${voice} voiceover`} onPlay={(event) => onPlay(event.currentTarget)} onError={() => setFailed(true)} />
     {failed && <p className="error-message" role="alert">{voice}: This audio couldn’t be played. Try downloading it or generating it again.</p>}
-    <a href={url} download={`voiceover-${voice.toLowerCase()}.wav`} className="download-button" aria-label={`Download ${voice} WAV`}>↓ Download WAV</a>
+    <a href={url} download={filename} title={filename} className="download-button" aria-label={`Download ${voice} WAV`}>↓ Download WAV</a>
   </div>;
 }
 
@@ -32,7 +33,8 @@ export function useVoiceComparison() {
     active.current = batch; // Lock before React updates.
     urls.current.forEach(URL.revokeObjectURL);
     urls.current = [];
-    setResults(voices.map((voice) => ({ voice, status: "generating" })));
+    const generatedAt = new Date();
+    setResults(voices.map((voice) => ({ voice, filename: voiceoverFilename(input.text, voice, generatedAt), status: "generating" })));
     setLoading(true);
     await Promise.all(voices.map(async (voice, index) => {
       const controller = batch.controllers[index];
@@ -43,11 +45,11 @@ export function useVoiceComparison() {
         if (active.current !== batch || controller.signal.aborted) return;
         const url = URL.createObjectURL(blob);
         urls.current.push(url);
-        setResults((rows) => rows.map((row) => row.voice === voice ? { voice, status: "ready", url } : row));
+        setResults((rows) => rows.map((row) => row.voice === voice ? { ...row, status: "ready", url } : row));
       } catch (cause) {
         if (active.current !== batch) return;
         const error = cause instanceof Error ? cause.message : "Voice generation failed. Please try again.";
-        setResults((rows) => rows.map((row) => row.voice === voice ? { voice, status: "failed", error } : row));
+        setResults((rows) => rows.map((row) => row.voice === voice ? { ...row, status: "failed", error } : row));
       }
     }));
     if (active.current === batch) { active.current = null; setLoading(false); }
@@ -78,7 +80,7 @@ export function VoiceComparisonResults({ results, loading }: { results: Audition
         <div className="audition-heading"><h3>{row.voice}</h3><span>{VOICES.find((voice) => voice.id === row.voice)?.description}</span></div>
         {row.status === "generating" && <p className="audition-pending"><span className="spinner" aria-hidden="true" />{row.progress && row.progress.total > 1 ? `${row.progress.completed} of ${row.progress.total} sections complete` : "Generating voice…"}</p>}
         {row.status === "failed" && <p className="error-message" role="alert">{row.voice}: {row.error}</p>}
-        {row.url && <AuditionAudio key={row.url} voice={row.voice} url={row.url} onPlay={pauseOthers} />}
+        {row.url && <AuditionAudio key={row.url} voice={row.voice} url={row.url} filename={row.filename} onPlay={pauseOthers} />}
       </section>)}
     </div>
     {!results.length && <div className="comparison-empty">Choose two or three voices, then generate your auditions.</div>}

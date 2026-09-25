@@ -2,6 +2,8 @@
 
 A small voiceover app: enter a script and delivery direction, generate speech, listen, and download a WAV.
 
+Downloads use the first few script words, local generation date and time, and voice name: `Hello-world_2026-09-25_153000_Sulafat.wav`. Telugu text is preserved and filename-unsafe punctuation is removed. The name stays attached to its generated audio when the script or selected voice is edited later.
+
 Single voice is the default. Switch to **Compare voices** to select two or three of the existing voices and generate auditions together. Each gets the identical script and delivery direction, independent progress, a player, and a voice-named WAV download. Successful auditions remain available if another fails. Playing one audition pauses the others. Each voice uses one provider call per script section; there are no automatic retries.
 
 The default voice is Sulafat (warm), with editable delivery direction for conversational Andhra Telugu: relaxed medium pace, natural pauses, and gentle emphasis. Use Telugu script for Telugu speech. Custom directions are passed through unchanged; clearing the direction field restores the default on the server. The spoken script is never rewritten or translated by the app.

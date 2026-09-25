@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { requestVoiceover, type GenerationProgress } from "@/lib/api-client";
 import { useVoiceComparison, VoiceComparisonResults } from "./voice-comparison";
+import { voiceoverFilename } from "@/lib/filename";
 import { DEFAULT_PERSONA, DEFAULT_VOICE, MAX_PERSONA, MAX_SCRIPT_WORDS, countWords, VOICES, validateRequest, type Voice } from "@/lib/contracts";
 
 function SoundMark({ small = false }: { small?: boolean }) {
@@ -17,6 +18,7 @@ export default function VoiceoverStudio() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<GenerationProgress | null>(null);
   const [audio, setAudio] = useState<string | null>(null);
+  const [filename, setFilename] = useState("");
   const [error, setError] = useState("");
   const busy = loading || comparison.loading;
   const words = countWords(text);
@@ -41,6 +43,7 @@ export default function VoiceoverStudio() {
       return;
     }
     const controller = new AbortController();
+    const nextFilename = voiceoverFilename(input.text, input.voice);
     pending.current = controller;
     setLoading(true); setError(""); setProgress(null);
     try {
@@ -50,6 +53,7 @@ export default function VoiceoverStudio() {
       const oldUrl = audioUrl.current;
       audioUrl.current = nextUrl;
       setAudio(nextUrl);
+      setFilename(nextFilename);
       if (oldUrl) URL.revokeObjectURL(oldUrl);
     } catch (cause) {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Voice generation failed. Please try again.");
@@ -96,7 +100,7 @@ export default function VoiceoverStudio() {
             <div className="sound-emblem"><SoundMark /></div>
             <div role="status" aria-live="polite" aria-atomic="true"><h3>{loading ? "Generating voice…" : audio ? "Voiceover ready" : "No voiceover yet"}</h3><p>{loading ? progress && progress.total > 1 ? `${progress.completed} of ${progress.total} sections complete. Keep this page open.` : "This may take a moment." : audio ? "Play or download the audio." : "Enter a script, then select Generate voice."}</p></div>
           </div>
-          {audio && <div className="audio-result"><audio key={audio} controls src={audio} preload="metadata" aria-label="Generated voiceover" onError={() => setError("This audio couldn’t be played. Try generating it again.")} /><a href={audio} download="voiceover.wav" className="download-button"><span aria-hidden="true">↓</span> Download WAV</a><p className="audio-meta">24 kHz · Mono · 16-bit PCM</p></div>}
+          {audio && <div className="audio-result"><audio key={audio} controls src={audio} preload="metadata" aria-label="Generated voiceover" onError={() => setError("This audio couldn’t be played. Try generating it again.")} /><a href={audio} download={filename} title={filename} className="download-button"><span aria-hidden="true">↓</span> Download WAV</a><p className="audio-meta">24 kHz · Mono · 16-bit PCM</p></div>}
           </>}
         </section>
       </form>
