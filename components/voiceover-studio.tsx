@@ -5,7 +5,8 @@ import { DEFAULT_VARIANT_ID, VOICE_PROFILES, VOICE_VARIANTS, getVoiceVariant, va
 import { useAuditions } from "./use-auditions";
 import { useVoicePreviews } from "./use-voice-previews";
 import { AuditionResults } from "./audition-results";
-const API_KEY_STORAGE = "vocal.gemini-api-key";
+import { useBrowserKeys } from "./use-browser-keys";
+import { KeySettings } from "./key-settings";
 
 function SoundMark() {
   return <span className="sound-mark small" aria-hidden="true">{[14, 26, 36, 22, 12].map((height, i) => <i key={i} style={{ height }} />)}</span>;
@@ -13,8 +14,9 @@ function SoundMark() {
 
 export default function VoiceoverStudio() {
   const [text, setText] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [keyStorageError, setKeyStorageError] = useState(false);
+  const keys = useBrowserKeys();
+  const apiKey = keys.apiKey;
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [directions, setDirections] = useState<VoiceDirections>(() => Object.fromEntries(VOICE_VARIANTS.map((variant) => [variant.id, variant.profile.baseDirection])) as VoiceDirections);
   const [selectedVoiceVariants, setSelectedVoiceVariants] = useState<VoiceVariantId[]>([DEFAULT_VARIANT_ID]);
   const [error, setError] = useState("");
@@ -26,20 +28,8 @@ export default function VoiceoverStudio() {
   const overLimit = words > MAX_SCRIPT_WORDS;
   const allVoicesSelected = selectedVoiceVariants.length === VOICE_VARIANTS.length;
   const previewVariant = previews.preview ? getVoiceVariant(previews.preview.variantId) : undefined;
-  useEffect(() => {
-    try { setApiKey(localStorage.getItem(API_KEY_STORAGE) ?? ""); }
-    catch { setKeyStorageError(true); }
-  }, []);
-
+  useEffect(() => { pauseAudio(); previews.reset(); }, [apiKey]);
   function pauseAudio() { studio.current?.querySelectorAll("audio").forEach((audio) => audio.pause()); }
-  function updateApiKey(value: string) {
-    setApiKey(value); setError(""); pauseAudio(); previews.reset();
-    try {
-      if (value.trim()) localStorage.setItem(API_KEY_STORAGE, value.trim());
-      else localStorage.removeItem(API_KEY_STORAGE);
-      setKeyStorageError(false);
-    } catch { setKeyStorageError(true); }
-  }
   function updateDirection(variantId: VoiceVariantId, direction: string) {
     setDirections((current) => ({ ...current, [variantId]: direction }));
     setError("");
@@ -47,7 +37,7 @@ export default function VoiceoverStudio() {
   }
   async function generate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (auditions.loading) return;
+    if (auditions.loading || !keys.ready) return;
     if (!selectedVoiceVariants.length) { setError("Select at least one voice."); return; }
     setError(""); pauseAudio(); previews.stop();
     try { await auditions.generate(text, directions, selectedVoiceVariants, apiKey); }
@@ -59,20 +49,13 @@ export default function VoiceoverStudio() {
     const current = event.target;
     studio.current?.querySelectorAll("audio").forEach((audio) => { if (audio !== current) audio.pause(); });
   }}>
-    <header className="masthead"><a href="/" className="wordmark" aria-label="Vocal home"><SoundMark /><span>vocal<span className="brand-dot">.</span></span></a></header>
+    <header className="masthead"><a href="/" className="wordmark" aria-label="Vocal home"><SoundMark /><span>vocal<span className="brand-dot">.</span></span></a><button type="button" className="preview-button" disabled={auditions.loading} onClick={() => { pauseAudio(); previews.stop(); setSettingsOpen(true); void keys.reload(); }}>Settings</button></header>
+    {settingsOpen && <KeySettings saved={keys.saved} error={keys.error} change={keys.change} close={() => setSettingsOpen(false)} retry={keys.reload} useServer={keys.useServer} />}
     <main>
       <div className="page-heading"><h1>Voiceover studio</h1><span className="format-note">WAV <span>/</span> 24 kHz <span>/</span> 16-bit</span></div>
+      {keys.error && <p role="alert" className="error-message">Saved keys couldn’t be loaded. Open Settings to retry or use the server key.</p>}
       <div className="workspace">
         <form onSubmit={generate} className="input-column">
-          <section className="api-key-section">
-            <div className="label-row"><label htmlFor="gemini-api-key">Gemini API key</label><span className="optional">Optional</span></div>
-            <div className="api-key-field">
-              <input id="gemini-api-key" type="password" autoComplete="off" spellCheck={false} autoCapitalize="none" value={apiKey} maxLength={8192} disabled={auditions.loading} onChange={(event) => updateApiKey(event.target.value)} aria-describedby="api-key-hint" placeholder="Paste a key, or leave blank to use the server key" className="api-key-input" />
-              {apiKey && <button className="clear-script" type="button" aria-label="Clear API key" title="Clear API key" disabled={auditions.loading} onClick={(event) => { updateApiKey(""); event.currentTarget.parentElement?.querySelector("input")?.focus(); }}><span aria-hidden="true">×</span></button>}
-            </div>
-            <p className="field-hint" id="api-key-hint">Saved in this browser for Preview and Generate. The × removes the saved key. Sent through this app’s server to Google. Keys from the same Google project share quota.</p>
-            {keyStorageError && <p className="field-hint" role="status">Browser storage is unavailable. This edit applies only to the current page; a previously saved key may return after refresh.</p>}
-          </section>
           <section className="script-section">
             <div className="label-row"><label htmlFor="transcript"><span className="step">01</span> Transcript</label><span className="character-count" id="script-count">{words.toLocaleString()} / {MAX_SCRIPT_WORDS.toLocaleString()} words</span></div>
             <div className="script-field">
@@ -99,7 +82,7 @@ export default function VoiceoverStudio() {
                     setSelectedVoiceVariants((current) => event.target.checked ? [...current, variant.id] : current.filter((id) => id !== variant.id));
                     setError("");
                   }} /><span>{variant.gender}<small>{variant.voice}</small></span></label>
-                  <button className="preview-button" type="button" aria-label={`Preview ${variantLabel(variant)}`} disabled={previews.preview?.loading && previews.preview.variantId === variant.id} onClick={() => { pauseAudio(); void previews.load(variant.id, directions[variant.id], apiKey); }}>{previews.preview?.loading && previews.preview.variantId === variant.id ? "Loading…" : "Preview"}</button>
+                  <button className="preview-button" type="button" aria-label={`Preview ${variantLabel(variant)}`} disabled={!keys.ready || (previews.preview?.loading && previews.preview.variantId === variant.id)} onClick={() => { pauseAudio(); void previews.load(variant.id, directions[variant.id], apiKey); }}>{previews.preview?.loading && previews.preview.variantId === variant.id ? "Loading…" : "Preview"}</button>
                   </div>
                   <div className="voice-direction-heading"><label htmlFor={`direction-${variant.id}`}>Direction</label><button className="preview-button" type="button" aria-label={`Reset ${variant.voice} direction`} disabled={directions[variant.id] === variant.profile.baseDirection} onClick={() => updateDirection(variant.id, variant.profile.baseDirection)}>Reset</button></div>
                   <div className="direction-field">
@@ -120,7 +103,7 @@ export default function VoiceoverStudio() {
             </div>}
           </section>
 
-          <div className="generate-row">{auditions.loading && <button className="generate-button cancel-button" type="button" onClick={auditions.cancel}>Cancel</button>}<button className="generate-button" type="submit" disabled={auditions.loading || !text.trim() || overLimit || !selectedVoiceVariants.length}>{auditions.loading ? <><span className="spinner" />Generating…</> : <><SoundMark />Generate</>}</button></div>
+          <div className="generate-row">{auditions.loading && <button className="generate-button cancel-button" type="button" onClick={auditions.cancel}>Cancel</button>}<button className="generate-button" type="submit" disabled={auditions.loading || !keys.ready || !text.trim() || overLimit || !selectedVoiceVariants.length}>{auditions.loading ? <><span className="spinner" />Generating…</> : <><SoundMark />Generate</>}</button></div>
           {error && <p className="error-message" role="alert">{error}</p>}
         </form>
         <AuditionResults results={auditions.results} loading={auditions.loading} />
