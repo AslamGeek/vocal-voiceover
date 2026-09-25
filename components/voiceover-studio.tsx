@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { requestVoiceover, type GenerationProgress } from "@/lib/api-client";
 import { useVoiceComparison, VoiceComparisonResults } from "./voice-comparison";
 import { voiceoverFilename } from "@/lib/filename";
+import { DEFAULT_PRESET_ID, DELIVERY_PRESETS, type DeliveryPresetId } from "@/lib/presets";
 import { DEFAULT_PERSONA, DEFAULT_VOICE, MAX_PERSONA, MAX_SCRIPT_WORDS, countWords, VOICES, validateRequest, type Voice } from "@/lib/contracts";
 
 function SoundMark({ small = false }: { small?: boolean }) {
@@ -11,6 +12,8 @@ function SoundMark({ small = false }: { small?: boolean }) {
 export default function VoiceoverStudio() {
   const [text, setText] = useState("");
   const [persona, setPersona] = useState(DEFAULT_PERSONA);
+  const [presetId, setPresetId] = useState<DeliveryPresetId>(DEFAULT_PRESET_ID);
+  const preset = DELIVERY_PRESETS.find((item) => item.id === presetId)!;
   const [voice, setVoice] = useState<Voice>(DEFAULT_VOICE);
   const [compare, setCompare] = useState(false);
   const [comparedVoices, setComparedVoices] = useState<Voice[]>(VOICES.map((item) => item.id));
@@ -34,7 +37,7 @@ export default function VoiceoverStudio() {
     // Synchronous lock closes the gap before React commits disabled state.
     if (pending.current || comparison.loading) return;
     let input;
-    try { input = validateRequest({ text, persona, voice }); }
+    try { input = validateRequest({ text, persona: persona.trim() ? persona : preset.direction, voice }); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Check your script and try again."); return; }
     if (compare) {
       if (comparedVoices.length < 2) { setError("Select at least two voices to compare."); return; }
@@ -69,14 +72,19 @@ export default function VoiceoverStudio() {
         <div className="input-column">
           <section className="script-section">
             <div className="label-row"><label htmlFor="script"><span className="step">01</span> Your script</label><span className="character-count" id="script-count">{words.toLocaleString()} / {MAX_SCRIPT_WORDS.toLocaleString()} words</span></div>
-            <textarea id="script" name="text" value={text} onChange={(e) => setText(e.target.value)} required disabled={busy} aria-invalid={overLimit} aria-describedby={`script-hint script-count${overLimit ? " script-limit" : ""}`} placeholder="Enter your script…" className="script-input" />
-            <p className="field-hint" id="script-hint">Your script is read without rewriting.</p>
+            <textarea id="script" name="text" value={text} onChange={(e) => setText(e.target.value)} required disabled={busy} aria-invalid={overLimit} aria-describedby={`script-hint script-count${overLimit ? " script-limit" : ""}`} placeholder={`Enter your ${preset.language} script…`} className="script-input" />
+            <p className="field-hint" id="script-hint">Your script is read without rewriting or translation.</p>
             {overLimit && <p className="error-message" id="script-limit" role="alert">Keep your script to 3,000 words or fewer.</p>}
           </section>
           <section className="direction-section">
+            <div className="voice-row preset-row"><label htmlFor="purpose">Purpose</label><select id="purpose" value={presetId} disabled={busy} aria-describedby="purpose-hint" onChange={(event) => {
+              const selected = DELIVERY_PRESETS.find((item) => item.id === event.target.value);
+              if (selected) { setPresetId(selected.id); setPersona(selected.direction); }
+            }}>{DELIVERY_PRESETS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div>
+            <p className="section-hint" id="purpose-hint">Choosing a preset replaces the delivery direction below.</p>
             <div className="label-row"><label htmlFor="persona"><span className="step">02</span> Delivery direction</label><span className="optional">Optional</span></div>
-            <p className="section-hint" id="persona-hint">Set the tone, pace, and pronunciation.</p>
-            <textarea id="persona" name="persona" value={persona} onChange={(e) => setPersona(e.target.value)} maxLength={MAX_PERSONA} disabled={busy} aria-describedby="persona-hint" placeholder="Warm, conversational Andhra Telugu. Medium pace with natural pauses." className="persona-input" />
+            <p className="section-hint" id="persona-hint">Edit the tone, pace, and pronunciation. Leave blank to use the selected preset.</p>
+            <textarea id="persona" name="persona" value={persona} onChange={(e) => setPersona(e.target.value)} maxLength={MAX_PERSONA} disabled={busy} aria-describedby="persona-hint" placeholder={preset.direction} className="persona-input" />
             <fieldset className="generation-mode" disabled={busy}>
               <legend>Generation mode</legend>
               <label><input type="radio" name="mode" checked={!compare} onChange={() => { setCompare(false); setError(""); }} />Single voice</label>

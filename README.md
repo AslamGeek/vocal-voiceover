@@ -6,7 +6,9 @@ Downloads use the first few script words, local generation date and time, and vo
 
 Single voice is the default. Switch to **Compare voices** to select two or three of the existing voices and generate auditions together. Each gets the identical script and delivery direction, independent progress, a player, and a voice-named WAV download. Successful auditions remain available if another fails. Playing one audition pauses the others. Each voice uses one provider call per script section; there are no automatic retries.
 
-The default voice is Sulafat (warm), with editable delivery direction for conversational Andhra Telugu: relaxed medium pace, natural pauses, and gentle emphasis. Use Telugu script for Telugu speech. Custom directions are passed through unchanged; clearing the direction field restores the default on the server. The spoken script is never rewritten or translated by the app.
+The default purpose is **Telugu ads**, with Sulafat (warm) and conversational Andhra Telugu delivery. The **Purpose** selector also offers English ads, English and Telugu Reels / Shorts, and English and Telugu narration / explainers. Ads emphasize offers and calls to action; shorts use a stronger opening and brisk conversational pacing; narration uses a measured explanatory style. Choosing a purpose fills the editable delivery direction without changing the script or voice selection. Clearing the direction uses the selected preset in both single and comparison modes. Direct API calls without direction retain the Telugu-ad default.
+
+Use an English script for English presets and Telugu script for Telugu presets. The spoken script is never rewritten or translated by the app. Presets guide the delivery; pronunciation, accent, and pacing still need a listening check with real generated audio.
 
 ## Local development
 

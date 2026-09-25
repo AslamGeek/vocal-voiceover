@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import VoiceoverStudio from "@/components/voiceover-studio";
 import { requestVoiceover } from "@/lib/api-client";
+import { DELIVERY_PRESETS } from "@/lib/presets";
 vi.mock("@/lib/api-client", () => ({ requestVoiceover: vi.fn() }));
 const requestMock = vi.mocked(requestVoiceover);
 beforeEach(() => {
@@ -148,9 +149,26 @@ it("shows section progress and lets users cancel a long generation", async () =>
 });
 it("starts with the warm voice and editable Andhra Telugu delivery direction", () => {
   render(<VoiceoverStudio />);
+  expect((screen.getByLabelText("Purpose") as HTMLSelectElement).value).toBe("telugu-ads");
   expect((screen.getByLabelText("Voice") as HTMLSelectElement).value).toBe("Sulafat");
   expect((screen.getByLabelText(/Delivery direction/) as HTMLTextAreaElement).value).toContain("native Andhra Telugu accent");
   expect((screen.getByLabelText(/Your script/) as HTMLTextAreaElement).value).toBe("");
+});
+it.each([false, true])("uses the selected English preset when direction is blank (compare: %s)", async (compare) => {
+  requestMock.mockResolvedValue(new Blob(["wav"]));
+  render(<VoiceoverStudio />); fillScript();
+  fireEvent.change(screen.getByLabelText("Voice"), { target: { value: "Puck" } });
+  fireEvent.change(screen.getByLabelText(/Delivery direction/), { target: { value: "Custom direction" } });
+  fireEvent.change(screen.getByLabelText("Purpose"), { target: { value: "english-shorts" } });
+  const preset = DELIVERY_PRESETS.find((item) => item.id === "english-shorts")!;
+  expect((screen.getByLabelText(/Delivery direction/) as HTMLTextAreaElement).value).toBe(preset.direction);
+  expect((screen.getByLabelText("Voice") as HTMLSelectElement).value).toBe("Puck");
+  expect((screen.getByLabelText(/Your script/) as HTMLTextAreaElement).value).toBe("Hello, world.");
+  fireEvent.change(screen.getByLabelText(/Delivery direction/), { target: { value: "  " } });
+  if (compare) fireEvent.click(screen.getByRole("radio", { name: "Compare voices" }));
+  fireEvent.click(screen.getByRole("button", { name: compare ? "Generate auditions" : "Generate voice" }));
+  await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(compare ? 3 : 1));
+  expect(requestMock.mock.calls.every(([input]) => input.text === "Hello, world." && input.persona === preset.direction)).toBe(true);
 });
 it("prevents duplicate submissions while generating and exposes the result", async () => {
   let resolve!: (blob: Blob) => void;

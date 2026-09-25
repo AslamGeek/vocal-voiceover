@@ -31,6 +31,7 @@ textarea::placeholder{color:#757f78;opacity:1}
 .persona-input{border:1px solid var(--line);background:#fafbfa;border-radius:9px;padding:14px 16px;min-height:126px;font-size:14px}
 .voice-row{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-top:20px}
 .voice-row label{font-size:14px;font-weight:500}
+.voice-row.preset-row{margin-top:0}
 .generation-mode,.voice-choices{border:0;padding:0;margin:22px 0 0;min-width:0}
 .generation-mode legend,.voice-choices legend{font-size:14px;font-weight:600;margin-bottom:12px}
 .generation-mode{display:flex;flex-wrap:wrap;gap:12px 22px}
